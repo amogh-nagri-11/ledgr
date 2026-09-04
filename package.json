@@ -1,0 +1,16 @@
+{
+  "name": "ledgr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI MSME payment-compliance controller for Section 43B(h)",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  }
+}

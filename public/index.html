@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ledgr — MSME payment compliance</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="disclaimer">
+  <strong>Informational risk indicator, not tax advice.</strong>
+  Section 43B(h) eligibility involves judgement. Verify every flag with your CA before acting.
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">L</span>
+    <div>
+      <h1>Ledgr</h1>
+      <p>MSME payment compliance controller &middot; s.43B(h)</p>
+    </div>
+  </div>
+  <div class="modes">
+    <span class="chip" id="modeAi">AI: —</span>
+    <span class="chip" id="modePayout">Payouts: —</span>
+    <span class="chip" id="modeDate">—</span>
+  </div>
+</header>
+
+<section class="summary" id="summary"></section>
+
+<section class="controls">
+  <div class="actions">
+    <button id="btnAnalyze" class="primary">Run compliance analysis</button>
+    <button id="btnAuto">Auto-execute under threshold</button>
+    <button id="btnNew" class="ghost">+ New invoice</button>
+    <button id="btnAudit" class="ghost">Audit log</button>
+  </div>
+  <div class="policy">
+    <label>Buffer
+      <input type="number" id="cfgBuffer" min="0" max="20" />
+      <span class="unit">days before deadline</span>
+    </label>
+    <label>Tax rate
+      <input type="number" id="cfgTax" min="0" max="50" />
+      <span class="unit">%</span>
+    </label>
+    <label>Auto-execute at or under
+      <input type="number" id="cfgThreshold" min="0" step="500" />
+      <span class="unit">₹</span>
+    </label>
+    <button id="btnConfig" class="ghost small">Apply policy</button>
+  </div>
+</section>
+
+<p class="hint" id="hint"></p>
+
+<main id="queue" class="queue"></main>
+
+<dialog id="newDialog">
+  <div class="dialog-head">
+    <h2>New invoice</h2>
+    <button id="closeNew" class="ghost small">Cancel</button>
+  </div>
+  <form id="newForm" class="intake">
+    <label>Vendor
+      <select id="niVendor" required></select>
+      <span class="fieldnote">Whether 43B(h) applies at all is decided by the Udyam registry, not by this dropdown.</span>
+    </label>
+    <label>Amount (₹)
+      <input type="number" id="niAmount" min="1" step="1" value="120000" required />
+    </label>
+    <label>Invoice date
+      <input type="date" id="niInvoiceDate" required />
+    </label>
+    <label><span class="lbl-row">Goods accepted on <span class="opt">optional</span></span>
+      <input type="date" id="niAccepted" />
+      <span class="fieldnote">The statutory clock runs from acceptance, not the invoice date. Leave blank to see what happens when no GRN exists.</span>
+    </label>
+    <label>Description
+      <input type="text" id="niDesc" value="Manual entry" />
+    </label>
+    <div class="intake-actions">
+      <button type="submit" class="primary">Add and analyse</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="auditDialog">
+  <div class="dialog-head">
+    <h2>Audit log</h2>
+    <button id="closeAudit" class="ghost small">Close</button>
+  </div>
+  <div id="auditBody" class="audit-body"></div>
+</dialog>
+
+<footer>
+  <p>Demo data only. Payouts run against RazorpayX sandbox or a local mock — no real money moves.
+  The statutory 45/15-day calculation is hardcoded; the model only extracts inputs and shows its evidence.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
