@@ -57,10 +57,15 @@ export async function sweepVendor(vendor, opts = {}) {
  */
 export async function sweepPortfolio({ refresh = false, forceHeuristic = false, onProgress } = {}) {
   const vendors = store.getVendors();
+  // "Resolved" means resolved by the AI arm. A heuristic result -- whether it
+  // came from a deliberate fast sweep or from a rate-limited fallback -- is a
+  // floor, not an answer, so a later pass upgrades it. That is what lets AI
+  // coverage accumulate across runs instead of freezing whatever the first
+  // pass managed.
   const unresolved = (v) => {
     const f = store.getVendorFinding(v.id);
     if (!f) return true;
-    return !forceHeuristic && f.mode === 'heuristic_fallback';
+    return !forceHeuristic && f.mode !== 'ai';
   };
   const todo = refresh ? vendors : vendors.filter(unresolved);
   let done = 0;
@@ -133,11 +138,10 @@ export async function assessInvoice(invoice, { refresh = false, forceHeuristic =
     await sweepVendor(vendor, { forceHeuristic });
   }
 
-  // As with vendors: a finding that fell back to the heuristic arm because the
-  // provider was rate-limited is not a resolved finding. Re-running should
-  // retry it, so AI coverage accumulates across passes.
+  // As with vendors: only an AI finding counts as resolved. Anything from the
+  // heuristic arm is a floor to be upgraded on a later pass.
   let finding = store.getInvoiceFinding(invoice.id);
-  const unresolved = !finding || (!forceHeuristic && finding.mode === 'heuristic_fallback');
+  const unresolved = !finding || (!forceHeuristic && finding.mode !== 'ai');
   if (unresolved || refresh) {
     finding = await resolveInvoice(invoice, vendor, { forceHeuristic });
     store.setInvoiceFinding(invoice.id, finding);
