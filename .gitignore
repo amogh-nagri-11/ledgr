@@ -14,3 +14,6 @@ PROVENANCE.md
 
 # Generated narration for the ?demo=1 autopilot (npm run demo:voice)
 public/demo-audio/
+
+# Slide deck, kept locally (re-exports would bloat history)
+*.pptx
