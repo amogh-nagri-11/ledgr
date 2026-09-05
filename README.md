@@ -1,6 +1,6 @@
 # Ledgr
 
-**Section 43B(h) payment-compliance controller.** Full spec in [`LEDGR.md`](./LEDGR.md).
+**Section 43B(h) payment-compliance controller.**
 
 Pay a Udyam-registered micro or small enterprise late and you lose the income-tax deduction on that expense for the year. Not a fine — the expense simply stops being deductible, so the tax bill goes up. On a ₹5,00,000 invoice at 25% that is ₹1,25,000, purely from timing.
 
