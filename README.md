@@ -16,34 +16,26 @@ Click **Run compliance analysis**, then click any row to see the evidence chain.
 
 ## What's built
 
-All ten features from the spec's build order:
+Three phases, in order:
 
-| # | Feature | Where |
-|---|---|---|
-| 1 | Invoice intake (structured, no OCR) | `POST /api/invoices`, `src/data/seed.js` |
-| 2 | MSME status check against a Udyam registry | `src/agent/tools.js` |
-| 3 | Deadline calculator, 45 / 15 day | `src/engine/deadline.js` |
-| 4 | RazorpayX payout lookup | `src/razorpayx.js` |
-| 5 | Risk classification 🔴🟡🟢⚪ | `src/engine/risk.js` |
-| 6 | Recommendation with the rupee cost | `src/agent/explain.js` |
-| 7 | Ranked action queue | `public/` |
-| 8 | Bounded auto-execution | `POST /api/auto-execute` |
-| 9 | Audit log with the full reasoning trail | `src/store.js`, Audit log button |
-| 10 | Disclaimer banner | `public/index.html` |
+**1 · Portfolio sweep** — one investigation per *vendor*, cached and re-verified on demand. Validates the declared Udyam number (or finds one by name), resolves identity ambiguity with the GSTIN state prefix and the supply history, and classifies registered vs actual activity. 24 vendors and 210 invoices is 24 investigations, not 210.
+
+**2 · Live queue** — one investigation per *payable*. Which agreement governs, what term it states, when the clock actually started, and what the supplier really did on this supply.
+
+**3 · Retroactive audit** — reconstructs FY 2025-26, judging coverage as at each supply date, and reports decomposed by confidence rather than as a single number.
+
+Then execution: bounded auto-execute under a threshold, human approval above it, and a compliance item that **closes only when RazorpayX confirms the money moved**.
 
 ## The architectural split
 
-**`src/agent/` may never compute a date.** It resolves three messy inputs and attaches evidence and a confidence score to each:
+**`src/agent/` may never decide anything.** Both agents return evidence and confidence. Neither can return "covered" or a deadline — the submission schemas have no such field, and there is a test asserting it.
 
-1. **Vendor identity** — "Sharma Ent." in the ledger vs "Sharma Enterprises Private Limited" in the Udyam registry.
-2. **The agreement and its stated term** — read out of the actual contract text, reported *as written* even when it exceeds 45 days.
-3. **When the clock starts** — usually not the invoice date. A signed GRN is acceptance; a timely written objection restarts the clock at re-acceptance; no GRN and no objection means deemed acceptance 15 days after delivery.
+**`src/engine/` decides.** Two hardcoded rules:
 
-**`src/engine/` does all the arithmetic and is deliberately dumb.** The 45/15-day rule, the statutory cap, the disallowance cost and the risk bands are hardcoded and unit-tested.
+- `deadline.js` — the 45/15-day arithmetic and the statutory cap
+- `coverage.js` — does s.43B(h) engage at all: micro/small, registration live *on the supply date*, and not a trading enterprise unless the supply itself rebuts the registered activity
 
-So the answer to *"what if the AI hallucinates a deadline?"* is that it structurally cannot. It can only hallucinate an input — and every input is displayed with its source quote next to the calculation that consumed it.
-
-The agent investigates rather than escalating on first ambiguity: it queries the registry, pulls the contract, walks the delivery trail, and checks RazorpayX, then submits a resolved finding. Every tool call is recorded and shown in the row's **Investigation trail**.
+Coverage gets the same treatment as the dates deliberately. Letting a model return `covered: true` would reintroduce exactly the exposure the deadline engine exists to remove.
 
 ## Choosing an AI provider
 

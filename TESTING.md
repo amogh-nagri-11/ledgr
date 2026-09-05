@@ -1,219 +1,160 @@
-# Live test script
+# Live test — one scenario, end to end
 
-Eight tests you can run in the browser in about ten minutes. Each one is written so you can **check the answer by hand** — that's the point. A dashboard that only ever agrees with itself proves nothing.
+One pass through the whole product, ~12 minutes. Every number is checkable by hand, which is the point.
 
-> **Dates shift.** Everything below assumes today is **2026-09-04**, because the seed data is dated relative to today. If you run this tomorrow every date moves by a day. The *arithmetic* is what to check, not the literal strings.
+> **Dates shift.** Written assuming today is **2026-09-05**. Live payables are dated relative to today, so if you run this next week every date moves. Check the *arithmetic*, not the literal strings.
 
 ---
-
-## Step 0 — optional, 2 minutes: turn the real AI on
-
-The app runs fine without this, but in heuristic mode the "AI" is regex. To see actual reasoning:
-
-1. Go to **https://aistudio.google.com/apikey** → *Create API key*. Free, no card.
-2. In the project root:
-   ```powershell
-   Copy-Item .env.example .env
-   notepad .env
-   ```
-   Put the key on the `GEMINI_API_KEY=` line, save.
-3. Restart: `npm start`
-
-The header chip should read **AI: Google Gemini · gemini-3.6-flash** instead of *heuristic fallback*. Every row is badged with whichever produced it, so you can tell them apart at a glance.
-
-> **Free-tier throughput is the real constraint, and it shapes how you demo.**
-> Each invoice is a full agentic loop — about 6 requests and ~60 seconds. Running all 11 at once trips Gemini's per-minute quota, and every row silently falls back to the heuristic. That fallback is correct behaviour, but it is not what you want on screen.
->
-> **So: run the ledger on heuristic, then use the "Re-analyse this row" button** (inside a row's detail panel, top-right of *Investigation trail*) to run the real agent on just the two or three rows you're demonstrating. Tests 3 and 5 are the ones worth spending quota on.
->
-> If a model id 404s saying it is no longer available, list what your key can actually see:
-> ```powershell
-> curl.exe -s -H "Authorization: Bearer $env:GEMINI_API_KEY" https://generativelanguage.googleapis.com/v1beta/openai/models
-> ```
-> and set `LLM_MODEL=` in `.env` to one of them.
 
 ## Setup
 
 ```powershell
+npm install
 npm start
 ```
 
-Open **http://localhost:3000** and click **Run compliance analysis**. On heuristic this takes about a second.
+Open **http://localhost:3000**. The header should read *24 vendors · 25 live · 185 historical*.
 
-You should see **6 red · 1 amber · 3 green · 1 needs review**, ₹11,69,400 at risk, ₹2,92,350 exposure.
+**Leave the AI off for this run.** The first pass should be fast and deterministic; there is a dedicated AI comparison at step 7. If you have `GEMINI_API_KEY` in `.env`, that's fine — the sweep will just take longer.
 
 ---
 
-## Test 1 — the falsification test *(do this one first)*
+## The scenario
 
-**Claim being tested:** the 45/15-day split is real logic, not a label attached to seeded rows.
+You are the finance lead at a mid-size manufacturer. You have 24 suppliers, 25 unpaid invoices, and a year of history. You do not know which suppliers carry a s.43B(h) obligation, because nobody has ever worked it out. You want to know what it already cost you, what is about to cost you, and to fix the ones you can still fix.
 
-Two invoices, **identical in every way except the vendor**. One vendor has a contract on file, the other doesn't.
+---
 
-**A.** Click **+ New invoice**:
+## Step 1 — Classify the portfolio
 
-| Field | Value |
+Click **Run portfolio sweep**. It lands on the **Vendor portfolio** tab.
+
+Expected: **13 in scope · 5 out of scope · 6 unresolved**.
+
+The five out of scope are the point. Click into them:
+
+| Vendor | Why it is out of scope |
 |---|---|
-| Vendor | `Aruna Pkg Solutions (V003)` |
-| Amount | `120000` |
-| Invoice date | `2026-08-30` |
-| Goods accepted on | `2026-08-30` |
-| Description | `Test A` |
+| **Orion Steel Traders** | Registered, small, active — and a **wholesale trader** (NIC 46721). Trade was admitted to Udyam for priority-sector lending, not for the s.15 obligation s.43B(h) hangs on. |
+| **Sunrise Stationers**, **Tricity Hardware** | Retail trade. |
+| **Vertex Industrial Systems** | Registered, but **medium**. The section reaches micro and small only. |
+| **Zenith Packaging** | A manufacturer, but supplying imported film as received — a pass-through on this supply. |
 
-**Add and analyse.**
+Open **Orion Steel Traders** and read the two panels side by side. The left panel is what the agent found — identity, evidence, registered activity. The right panel is the **coverage rule**, and it shows its own working. **The agent never returns "covered".** That separation is deliberate: a hallucinated coverage call would cost exactly as much as a hallucinated date, so both determinations are hardcoded.
 
-**B.** Same again, changing **only** the vendor to `Sharma Ent. (V001)`.
-
-### Expected
-
-| | A — Aruna | B — Sharma |
-|---|---|---|
-| Rule | `no written agreement` | `agreement term` |
-| Period | **15 days** | **45 days** |
-| Deadline | **2026-09-14** | **2026-10-14** |
-| Risk | 🟡 amber | 🟢 green |
-| Exposure | ₹30,000 | ₹30,000 |
-
-Same amount, same dates, **a month of difference in the deadline** — driven entirely by whether a contract exists. Open row A's *Extracted inputs* panel: agreement reads **none on file**. Open B's: it quotes clause 7.2, *"payment within forty-five (45) days from the date of acceptance"*.
-
-Check it yourself: 30 Aug + 15 = 14 Sep. 30 Aug + 45 = 14 Oct.
+Now the six unresolved. Open **Vindhya Timber** — nothing declared at onboarding and nothing in the registry resembles the name. It is marked ⚪ *unresolved*, **not** "not covered". Guessing "not covered" here is how you silently lose a deduction.
 
 ---
 
-## Test 2 — a contract cannot buy more time than the statute allows
+## Step 2 — Reconstruct what it already cost
 
-**Row: INV-2042, Nandi Precision, ₹2,75,000.** Click it open.
+Go to **3 · Retroactive audit** → **Reconstruct last year**.
 
-The contract (`PO-TERMS-NANDI-2025`) says **"Payment terms are Net 60 days"** — and the evidence panel quotes exactly that. But the *Statutory calculation* panel says:
+Expected, on 185 invoices worth ₹3.77 Cr:
 
-> Agreement states 60 days, which exceeds the statutory ceiling → capped at 45 days. A contractual term cannot override s.15 MSMED.
+| Band | |
+|---|---|
+| Confident breaches | **₹24,07,975** exposure · 50 invoices · ₹96.3L paid late |
+| Contingent | ₹1,34,900 · 9 invoices resting on an uncertain vendor match |
+| Excluded | ₹1,17,57,500 · 35 invoices out of scope |
+| Unclassified | 21 |
 
-Deadline **2026-09-11**, not 2026-09-26. **The AI reported 60 and the engine overrode it to 45** — that separation is the whole architecture. Go by their own contract terms and this invoice looks comfortable; under the statute it's 7 days out and red.
+**Two things to notice.**
 
----
+It is never one number. A single "₹25 lakh" headline collapses the moment someone asks how confident you are in the vendor matches underneath it — so the part that rests on a shaky classification is broken out, and 21 invoices are declared unclassified rather than quietly counted.
 
-## Test 3 — the clock does not start at the invoice date
-
-**Row: INV-2044, Meghdoot Logistics, ₹1,85,000.** This is the best row in the demo. Spend AI quota here — click **Re-analyse this row**.
-
-Invoice dated **2026-07-26**, 30-day terms. Naive arithmetic: 26 Jul + 30 = **25 Aug** → breached ten days ago.
-
-Ledgr says **deadline 2026-09-08, 4 days left**. The *Investigation trail* shows it pulled the registry, the contract, the delivery timeline and the payout status before answering. The clock-start evidence, verbatim from a real run:
-
-> Written objection EMAIL-2291 raised on 2026-07-29 within the 7-day contractual window following 2026-07-26 delivery. Replacement consignment delivered on 2026-08-06 and accepted in full via GRN-4502 on 2026-08-09.
-
-Note what it did there: clause 4.2 only restarts the clock **if the objection was raised within seven days**. The model checked that precondition — 26 Jul to 29 Jul is 3 days — before applying the restart. The heuristic just sees "an objection exists" and takes the last GRN; it gets the same answer here by luck, not by reasoning.
-
-Then 9 Aug + 30 = 8 Sep. ✓
-
-A date calculator gets this wrong and sends someone chasing a breach that never happened.
+And read *Why invoices were excluded*. **₹1.17 Cr of payments** would have been counted as exposure by a tool that checked only "registered + micro/small". The largest single line is **registration not live** and **trading enterprise** — vendors whose status a naive check gets wrong.
 
 ---
 
-## Test 4 — risk is tied to money, not to the calendar
+## Step 3 — Coverage is a function of the supply date
 
-**Row: INV-2049, Sharma Ent., ₹95,000.**
+Still in the audit, note the excluded reason **registration not live** (5 invoices). That's Suvarna Textiles, whose registration lapsed on **2025-11-30** — mid financial year.
 
-Deadline **2026-09-20** — 16 days away. Comfortable. Yet it's **🔴 red**:
+Go back to **Vendor portfolio** and open **Suvarna Textiles**: today it is out of scope. But its invoices from April to November 2025 **were** covered. The audit judged each supply on its own date rather than applying today's status backwards.
 
-> Payout scheduled 2026-09-22 — 2 day(s) past the deadline. Reschedule.
+Same story with **Girish Auto Components**, reclassified small → medium on **2026-01-15**, carrying 18 historical invoices that straddle the change.
 
-There *is* money in motion, which is exactly why a tracker that only watches deadlines marks this as handled. Ledgr reads the RazorpayX payout date and compares it to the statutory date.
-
-Contrast with **INV-2050** (green): paid 2026-08-27 against a 2026-08-30 deadline — settled in time, item closed.
-
----
-
-## Test 5 — it refuses to guess *(and where the two modes disagree)*
-
-**Row: INV-2046, K.P. Works, ₹1,10,000.** On heuristic it is ⚪ needs review:
-
-> No goods receipt note for INV-2046; the acceptance date is deemed rather than evidenced.
-
-There is **no Pay now button** on this row. Prove the block is real, not just hidden UI:
+Verify the scale of that error:
 
 ```powershell
-curl.exe -s -X POST http://localhost:3000/api/invoices/INV-2046/pay -H "Content-Type: application/json" -d "{}"
+npm run corpus
 ```
 
-→ `409` and *"This item is flagged for human review; resolve the open question before paying."*
-
-### Heuristic vs AI on this row — do this comparison
-
-Click **Re-analyse this row** and watch it change:
-
-- **Heuristic** flags ⚪ needs review, because it has a rule saying "deemed acceptance → escalate".
-- **Gemini** typically **resolves it to 🔴 red instead.** It reads NOTE-771, confirms no GRN *and* no objection exists, applies deemed acceptance at delivery + 15 days, and — reasonably — doesn't think that needs a human. It also cross-checks the vendor in a way nothing instructed it to: *"both in Delhi (buyer ledger GSTIN prefix 07 and Udyam DL state code)"*, and makes a second registry search to confirm the match before submitting.
-
-Both answers are defensible and the AI's is arguably the better one. But **know this before a panel demo**: if you say "it escalates when unsure" and then show a row that resolved, you'll get caught. Demo escalation with the intake below instead, which behaves the same in both modes.
-
-**A known weakness, worth being honest about.** The registry holds *both* "K P Works Trading Company" and "Kavya Print Works" — both micro, both Delhi — and this invoice is for **printed catalogues**. In testing, Gemini picked K P Works Trading and then searched again to *confirm* it, rather than weighing Kavya Print Works as a rival candidate. That's confirmation-seeking, not comparison. If a judge probes vendor-matching ambiguity, this is the row where they'll find it.
-
-### The deterministic escalation
-
-Add a new invoice for `K.P. Works (V006)` **leaving "Goods accepted on" blank**. It comes back ⚪ grey — *"No delivery or acceptance record exists"* — in either mode. Add the same invoice again **with** an acceptance date and it resolves to a real deadline and a colour. The escalation is caused by missing evidence, not hardcoded per vendor.
+Look for: **59 of 185 historical invoices misclassified, ₹1.06 Cr** by a baseline that classifies once, by today's status.
 
 ---
 
-## Test 6 — policy is configurable, statute is not
+## Step 4 — The live queue
 
-In the toolbar, change **Buffer** from `3` to `10` → **Apply policy**. Reopen **INV-2041**:
+Click **Analyse live ledger**. Expected: **6 red · 2 amber · 2 held for review · 15 green** across 25 payables.
 
-- Deadline: **2026-09-08 — unchanged.**
-- Recommended pay-by: moves from 2026-09-05 to **2026-08-29**.
+Open **INV-4124, Sharma Ent., ₹2,36,000**. Invoice dated ~37 days ago, 45-day terms. A naive reading starts the clock at delivery. Ledgr starts it 15 days later, at the goods receipt note. Read the *clock start* evidence and the investigation trail — the email says:
 
-Now change **Tax rate** to `30` → exposure on INV-2041 goes ₹1,25,000 → **₹1,50,000** (30% of ₹5,00,000).
+> "we have put the whole lot to one side in the yard and we are not booking them into stores or raising a receipt note until the certificates reach us"
 
-The knobs move the advice. **No knob moves the deadline** — that's statute, hardcoded in `src/engine/deadline.js`, with a unit test asserting exactly this invariant.
+That is a refusal to accept. It never uses the words *object* or *reject*, so keyword matching misses it entirely and starts the clock 15 days early — creating false urgency on an invoice that isn't due yet.
 
-Set buffer back to `3` and tax back to `25` before continuing.
-
----
-
-## Test 7 — execute, and check what got recorded
-
-1. **INV-2048** (Aruna, ₹8,400) shows **Auto-schedule**, not *Pay now* — it's under the ₹10,000 threshold. Click **Auto-execute under threshold**. It schedules and the row turns green.
-2. **INV-2041** (₹5,00,000) shows **Pay now** — above the threshold, so it needs a human. Click it.
-3. Click **Audit log**.
-
-Every entry carries the reasoning that produced it — approver, timestamp, payout id, the statutory workings, and the exposure avoided. The `analysis` entries carry the tool-call trail.
-
-Set `RAZORPAYX_*` in `.env` and the same click hits the sandbox `POST /v1/payouts` instead of the mock; the payout id changes from `pout_mock_…` to a real one.
+Then open **INV-4112, Falcon Freight**. There *is* an email with "Objection" in the subject line — but it objects to the **rate**, not the goods, which were already accepted. The clock must **not** restart. Keyword matching moves this deadline three days the wrong way.
 
 ---
 
-## Test 8 — vendors the rule doesn't touch
+## Step 5 — Execute, then close the loop
 
-Both green, for different reasons — open each and read the evidence line:
+1. **INV-4125** (Tricity Hardware, ₹8,400) has no Pay button — its vendor is out of scope. Nothing to do; that's correct.
+2. Find a red row above the threshold — **INV-4101, Sharma Ent., ₹5,00,000** — and click **Pay now**.
+3. The row does **not** go green. It shows **Confirm payout**.
 
-- **INV-2045, Vertex, ₹9,20,000** — registered, but a **medium** enterprise. 43B(h) covers micro and small only.
-- **INV-2047, Orion Steel, ₹3,40,000** — no Udyam registration found at all.
+That is the important behaviour. A payout being *requested* is not a compliance item being *closed*. Click **Confirm payout** — now RazorpayX has confirmed the money moved, and only now does the item close. That feedback loop is what makes this a payment product rather than a tax spreadsheet with a button on the end.
 
-Neither gets a deadline. A tool that flagged every large unpaid invoice would light both of these up and waste the finance team's time.
+4. Click **Auto-execute under threshold** — anything at or under ₹10,000 schedules without a click. Above it always needs a human.
+5. Open **Audit log**. Every entry carries the coverage decision, the statutory workings, the approver and the tool trail.
 
 ---
 
-## What each test proves
+## Step 6 — Prove the rules aren't cosmetic
 
-| Test | Proves |
+Add a new invoice twice with **+ New invoice**, changing only one field:
+
+| | A | B |
+|---|---|---|
+| Vendor | `Orion Steel Traders (V007)` | `Sharma Ent. (V001)` |
+| Amount | 200000 | 200000 |
+| Invoice date | today | today |
+| Goods accepted on | today | today |
+| Description | `TMT bars, bought in and resold` | `Fabricated brackets, made to drawing` |
+
+**A** comes back out of scope — no deadline, no exposure, nothing to do. **B** comes back with a 45-day deadline and ₹50,000 of exposure. Same amount, same dates; the difference is who the supplier is and what they actually did.
+
+Then change **Buffer** from 3 to 10 → **Apply policy**. The recommended pay-by date moves. **The deadline does not.** Buffer, tax rate, threshold and confidence floor are yours; the 45/15 rule and the coverage rule are statute.
+
+---
+
+## Step 7 — With the real agent
+
+Add `GEMINI_API_KEY` to `.env` (free, no card: aistudio.google.com/apikey), restart, and use the per-row buttons rather than a full sweep — 24 vendors × ~60s each will hit a free-tier quota.
+
+- **Vendor portfolio → Konark Printers → Re-sweep.** The declared number `UDYAM-OD-22-0061189` does not exist. The heuristic gives up. The agent should search by name and find *Konark Printing Press*.
+- **Vendor portfolio → K.P. Works → Re-sweep.** Two Delhi micro registrations: *Kavya Print Works* (printing) and *K P Works Trading Company* (trading). Same state, so GSTIN cannot separate them — but the supply is printed catalogues. Picking wrong flips coverage.
+- **Live queue → INV-4124 → Re-analyse this row.** Watch whether it catches the implicit refusal.
+
+Compare each against the heuristic result it replaced. Where they agree, the AI is not earning its place on that case — and the report at step 3 tells you exactly which cases those are.
+
+---
+
+## What this run demonstrated
+
+| Step | |
 |---|---|
-| 1 | The 45/15 split is computed from evidence, not seeded |
-| 2 | The AI extracts, the engine decides — and overrides the AI |
-| 3 | Genuine document reasoning; a date calculator gets this one wrong |
-| 4 | Compliance is tied to actual RazorpayX money movement |
-| 5 | Escalation on missing evidence — plus an honest heuristic/AI comparison |
-| 6 | Policy is tunable; statute is not |
-| 7 | Bounded auto-execution, human approval, full audit trail |
-| 8 | Correct negatives — it stays quiet when the rule doesn't apply |
+| 1 | Coverage is decided per vendor by a rule over agent evidence — traders and medium enterprises excluded, unknowns escalated |
+| 2 | A costed reconstruction of last year, decomposed by confidence rather than asserted as one number |
+| 3 | Coverage judged as at the supply date; 59 of 185 invoices misread by a today's-status baseline |
+| 4 | Document reasoning a keyword match gets wrong in both directions |
+| 5 | Bounded auto-execution, human approval, and closure only on confirmed money movement |
+| 6 | Policy is configurable; statute is not |
+| 7 | The AI arm measured against the non-AI arm, case by case |
 
 ## Reset
-
-```powershell
-Remove-Item .ledgr-state.json
-npm start
-```
-
-Or while it's running:
 
 ```powershell
 curl.exe -s -X POST http://localhost:3000/api/reset

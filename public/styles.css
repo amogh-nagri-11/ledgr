@@ -245,3 +245,51 @@ footer { padding: 26px 22px; color: var(--muted); font-size: 12px; max-width: 90
 }
 
 .detail h4 .reanalyse { float: right; margin-top: -4px; text-transform: none; letter-spacing: 0; }
+
+/* --- tabs ---------------------------------------------------------------- */
+.tabs { display: flex; gap: 4px; padding: 12px 22px 0; border-bottom: 1px solid var(--line); }
+.tab {
+  background: transparent; border: 1px solid transparent; border-bottom: none;
+  border-radius: 9px 9px 0 0; padding: 9px 16px; color: var(--muted); font-size: 13px;
+}
+.tab:hover { color: var(--ink); background: var(--panel); }
+.tab.active {
+  background: var(--panel); border-color: var(--line); color: var(--ink);
+  font-weight: 600; margin-bottom: -1px; border-bottom: 1px solid var(--panel);
+}
+.view[hidden] { display: none !important; }
+
+/* --- retro audit --------------------------------------------------------- */
+.retro { padding: 6px 22px; display: flex; flex-direction: column; gap: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 16px 18px; }
+.panel h3 { margin: 0 0 4px; font-size: 15px; }
+.panel.next { border-color: #2c3d5c; background: #141c28; }
+.panel.next a { color: var(--accent); }
+
+.decomp { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
+.band { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 9px; padding: 12px 14px; }
+.band.red { border-left-color: var(--red); }
+.band.amber { border-left-color: var(--amber); }
+.band .v { font-family: var(--mono); font-size: 20px; font-weight: 650; letter-spacing: -0.5px; }
+.band.red .v { color: var(--red); }
+.band.amber .v { color: var(--amber); }
+.band .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; }
+.band .s { color: var(--muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
+
+.provenance {
+  margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 11.5px; font-style: italic;
+}
+
+.tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
+.tbl th {
+  text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .5px; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line);
+}
+.tbl td { padding: 6px 10px 6px 0; border-bottom: 1px solid #1c242e; font-family: var(--mono); }
+.tbl td:nth-child(2) { font-family: inherit; }
+.tbl .late { color: var(--red); }
+.tbl .conf { color: var(--muted); }
+
+.deadline-pill.ok { color: var(--green); border-color: #23503f; }
+.fieldnote { color: var(--muted); font-size: 11.5px; line-height: 1.5; }

@@ -1,22 +1,34 @@
-// In-memory store with JSON persistence. Enough for an MVP; swap for a real DB
-// later without touching the engine or the agent.
+// In-memory store over the corpus, with JSON persistence for the mutable parts.
+//
+// The corpus itself is immutable reference data. What the app owns is: policy
+// config, agent findings (vendor and invoice), payouts it has booked, and the
+// audit log.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as seed from './data/seed.js';
+import * as corpus from './corpus/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(here, '..', '.ledgr-state.json');
 
+export const defaultConfig = {
+  bufferDays: 3,
+  redWindowDays: 7,
+  amberWindowDays: 21,
+  taxRatePct: 25,
+  autoExecuteThreshold: 10000,
+  identityConfidenceFloor: 0.6,
+};
+
 function freshState() {
   return {
-    config: { ...seed.defaultConfig },
-    invoices: seed.invoices.map((i) => ({ ...i })),
-    vendors: seed.vendors.map((v) => ({ ...v })),
-    payouts: JSON.parse(JSON.stringify(seed.payouts)),
-    deliveryEvents: {},   // invoiceId -> events captured at intake (seed data is separate)
-    findings: {},         // invoiceId -> agent finding (extraction result + trace)
+    config: { ...defaultConfig },
+    vendorFindings: {},    // vendorId -> portfolio agent finding (cached, reused across invoices)
+    invoiceFindings: {},   // invoiceId -> invoice agent finding
+    payouts: JSON.parse(JSON.stringify(corpus.payouts)),
+    extraInvoices: [],     // added through manual intake
+    extraDocuments: {},    // invoiceId -> acceptance documents captured at intake
     audit: [],
   };
 }
@@ -27,18 +39,13 @@ export function load() {
   try {
     if (fs.existsSync(STATE_FILE)) {
       const disk = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-      // Seed dates are relative to today, so only carry over the mutable parts.
       state.config = { ...state.config, ...(disk.config || {}) };
-      state.findings = disk.findings || {};
-      state.deliveryEvents = disk.deliveryEvents || {};
-      state.audit = disk.audit || [];
+      state.vendorFindings = disk.vendorFindings || {};
+      state.invoiceFindings = disk.invoiceFindings || {};
       state.payouts = { ...state.payouts, ...(disk.payouts || {}) };
-      for (const inv of disk.invoices || []) {
-        if (!state.invoices.some((i) => i.id === inv.id)) state.invoices.push(inv);
-      }
-      for (const v of disk.vendors || []) {
-        if (!state.vendors.some((x) => x.id === v.id)) state.vendors.push(v);
-      }
+      state.extraInvoices = disk.extraInvoices || [];
+      state.extraDocuments = disk.extraDocuments || {};
+      state.audit = disk.audit || [];
     }
   } catch (err) {
     console.warn('[store] could not read state file, starting fresh:', err.message);
@@ -64,8 +71,7 @@ export const getState = () => state;
 export const getConfig = () => state.config;
 
 export function setConfig(patch) {
-  const numeric = ['bufferDays', 'redWindowDays', 'amberWindowDays', 'taxRatePct', 'autoExecuteThreshold'];
-  for (const key of numeric) {
+  for (const key of Object.keys(defaultConfig)) {
     if (patch[key] !== undefined && Number.isFinite(Number(patch[key]))) {
       state.config[key] = Number(patch[key]);
     }
@@ -74,9 +80,16 @@ export function setConfig(patch) {
   return state.config;
 }
 
-export const getInvoices = () => state.invoices;
-export const getInvoice = (id) => state.invoices.find((i) => i.id === id);
-export const getVendor = (id) => state.vendors.find((v) => v.id === id);
+// ------------------------------------------------------------- corpus reads
+
+export const getVendors = () => corpus.vendors;
+export const getVendor = (id) => corpus.vendorById(id);
+
+export const getLiveInvoices = () => [...corpus.liveInvoices, ...state.extraInvoices];
+export const getHistoricalInvoices = () => corpus.historicalInvoices;
+export const getAllInvoices = () => [...getLiveInvoices(), ...corpus.historicalInvoices];
+export const getInvoice = (id) => getAllInvoices().find((i) => i.id === id) || null;
+
 export const getPayout = (invoiceId) => state.payouts[invoiceId] || null;
 
 export function setPayout(invoiceId, payout) {
@@ -86,32 +99,42 @@ export function setPayout(invoiceId, payout) {
 }
 
 export function addInvoice(invoice) {
-  state.invoices.push(invoice);
+  state.extraInvoices.push(invoice);
   persist();
   return invoice;
 }
 
-export const getFinding = (invoiceId) => state.findings[invoiceId] || null;
+export function addAcceptanceDocuments(invoiceId, docs) {
+  state.extraDocuments[invoiceId] = [...(state.extraDocuments[invoiceId] || []), ...docs]
+    .sort((a, b) => a.date.localeCompare(b.date));
+  persist();
+  return state.extraDocuments[invoiceId];
+}
 
-export function setFinding(invoiceId, finding) {
-  state.findings[invoiceId] = finding;
+export const getExtraDocuments = (invoiceId) => state.extraDocuments[invoiceId] || [];
+
+// ------------------------------------------------------------ agent findings
+
+export const getVendorFinding = (vendorId) => state.vendorFindings[vendorId] || null;
+
+export function setVendorFinding(vendorId, finding) {
+  state.vendorFindings[vendorId] = finding;
   persist();
   return finding;
 }
 
-/** Documents / delivery trail are reference data, not mutated by the app. */
-export const getVendorDocuments = (vendorId) => seed.vendorDocuments[vendorId] || [];
-/** Seeded trail first, then anything captured through intake. */
-export const getDeliveryEvents = (invoiceId) =>
-  seed.deliveryEvents[invoiceId] || state.deliveryEvents[invoiceId] || [];
+export const getInvoiceFinding = (invoiceId) => state.invoiceFindings[invoiceId] || null;
 
-export function addDeliveryEvents(invoiceId, events) {
-  state.deliveryEvents[invoiceId] = [...(state.deliveryEvents[invoiceId] || []), ...events]
-    .sort((a, b) => a.date.localeCompare(b.date));
+export function setInvoiceFinding(invoiceId, finding) {
+  state.invoiceFindings[invoiceId] = finding;
   persist();
-  return state.deliveryEvents[invoiceId];
+  return finding;
 }
-export const getUdyamRegistry = () => seed.udyamRegistry;
+
+export const sweepComplete = () => corpus.vendors.every((v) => state.vendorFindings[v.id]);
+export const sweptCount = () => corpus.vendors.filter((v) => state.vendorFindings[v.id]).length;
+
+// ------------------------------------------------------------------- audit
 
 export function audit(entry) {
   const record = { id: `EV-${Date.now()}-${state.audit.length}`, at: new Date().toISOString(), ...entry };

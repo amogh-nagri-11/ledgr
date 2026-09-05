@@ -1,38 +1,140 @@
-// The pipeline: AI finding -> deterministic deadline -> risk -> recommendation.
-// The split matters. Everything the model produced is an *input*; every date
-// below is arithmetic.
+// The pipeline.
+//
+//   portfolio agent  -> evidence about the vendor
+//   COVERAGE RULE    -> does s.43B(h) engage        (hardcoded)
+//   invoice agent    -> evidence about this supply
+//   DEADLINE ENGINE  -> the statutory date          (hardcoded)
+//   RISK             -> against the actual payout   (hardcoded)
+//
+// Both model outputs are inputs. Every determination below is arithmetic.
 
 import * as store from './store.js';
-import { computeDeadline, disallowanceCost, isCovered } from './engine/deadline.js';
+import { computeDeadline, disallowanceCost } from './engine/deadline.js';
+import { decideCoverage, RESULT } from './engine/coverage.js';
 import { classify, rankAssessments, RISK } from './engine/risk.js';
 import { today } from './engine/dates.js';
-import { resolveInvoice } from './agent/resolve.js';
+import { classifyVendor } from './agent/portfolio.js';
+import { resolveInvoice } from './agent/invoice.js';
 import { explain } from './agent/explain.js';
 
-/** Run (or reuse) the agent finding for one invoice, then price and classify it. */
+const concurrency = () => Math.max(1, Number(process.env.LLM_CONCURRENCY) || 2);
+
+/** Run a bounded-concurrency map. Free tiers meter per minute. */
+async function pool(items, worker) {
+  const limit = Math.min(concurrency(), items.length);
+  const out = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      out[i] = await worker(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, limit) }, run));
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 -- the portfolio sweep
+// ---------------------------------------------------------------------------
+
+export async function sweepVendor(vendor, opts = {}) {
+  const finding = await classifyVendor(vendor, opts);
+  store.setVendorFinding(vendor.id, finding);
+  return finding;
+}
+
+export async function sweepPortfolio({ refresh = false, forceHeuristic = false, onProgress } = {}) {
+  const vendors = store.getVendors();
+  const todo = refresh ? vendors : vendors.filter((v) => !store.getVendorFinding(v.id));
+  let done = 0;
+  await pool(todo, async (v) => {
+    await sweepVendor(v, { forceHeuristic });
+    done += 1;
+    if (onProgress) onProgress(done, todo.length, v.id);
+  });
+  return vendors.map((v) => ({ vendor: v, finding: store.getVendorFinding(v.id) }));
+}
+
+/** Coverage for one vendor as at a date. Rule over agent evidence. */
+export function coverageFor(vendorId, asOfDate, supplyNature = 'unknown') {
+  const finding = store.getVendorFinding(vendorId);
+  if (!finding) return null;
+  const config = store.getConfig();
+
+  // The cached finding was resolved as at some date; re-derive class/status for
+  // this supply date from the registration it identified.
+  const dated = datedStatus(finding, asOfDate);
+
+  return decideCoverage({
+    registrationFound: finding.registrationFound,
+    enterpriseClass: dated.enterpriseClass,
+    registrationActive: dated.registrationActive,
+    registeredActivity: finding.registeredActivity,
+    supplyNature: supplyNature === 'unknown' ? natureFromActivity(finding.actualActivity) : supplyNature,
+    identityConfidence: finding.identityConfidence,
+    confidenceFloor: config.identityConfidenceFloor,
+  });
+}
+
+function natureFromActivity(actual) {
+  if (actual === 'manufacturing') return 'manufactured';
+  if (actual === 'service') return 'service';
+  if (actual === 'trading') return 'resale';
+  return 'unknown';
+}
+
+/**
+ * Re-derive category and live status as at a supply date, from the registry
+ * entry the agent identified. The agent reports as-at-one-date; coverage has
+ * to be judged at every supply date, so this is the deterministic bridge.
+ */
+import { registrations, classAt, activeAt } from './corpus/registry.js';
+
+export function datedStatus(finding, asOfDate) {
+  if (!finding.registrationFound || !finding.udyam) {
+    return { enterpriseClass: null, registrationActive: false };
+  }
+  const reg = registrations.find((r) => r.udyam === finding.udyam);
+  if (!reg) return { enterpriseClass: finding.enterpriseClass, registrationActive: finding.registrationActive };
+  return { enterpriseClass: classAt(reg, asOfDate), registrationActive: activeAt(reg, asOfDate) };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 -- per-invoice assessment
+// ---------------------------------------------------------------------------
+
 export async function assessInvoice(invoice, { refresh = false, forceHeuristic = false } = {}) {
   const vendor = store.getVendor(invoice.vendorId);
-  let finding = store.getFinding(invoice.id);
 
+  if (!store.getVendorFinding(vendor.id)) {
+    await sweepVendor(vendor, { forceHeuristic });
+  }
+
+  let finding = store.getInvoiceFinding(invoice.id);
   if (!finding || refresh) {
     finding = await resolveInvoice(invoice, vendor, { forceHeuristic });
-    store.setFinding(invoice.id, finding);
+    store.setInvoiceFinding(invoice.id, finding);
   }
 
   return buildAssessment(invoice, vendor, finding);
 }
 
-/** Pure: given a finding, produce the assessment. No I/O, no model calls. */
+/** Pure. No I/O, no model calls. */
 export function buildAssessment(invoice, vendor, finding) {
   const config = store.getConfig();
   const t = today();
   const payout = store.getPayout(invoice.id);
+  const vendorFinding = store.getVendorFinding(vendor.id);
 
-  const covered = finding.vendorMatch.found
-    && isCovered(finding.vendorMatch.enterpriseClass, finding.vendorMatch.registrationActive);
+  const supplyDate = finding.clockStart?.date || invoice.invoiceDate;
+  const coverage = coverageFor(vendor.id, supplyDate, finding.supplyNature);
+  const covered = coverage ? coverage.result === RESULT.COVERED : false;
+  const coverageUnknown = coverage ? coverage.result === RESULT.UNKNOWN : true;
 
   let calc = null;
-  if (covered && finding.clockStart.date) {
+  if (covered && finding.clockStart?.date) {
     calc = computeDeadline({
       clockStartDate: finding.clockStart.date,
       hasWrittenAgreement: finding.agreement.exists,
@@ -40,11 +142,13 @@ export function buildAssessment(invoice, vendor, finding) {
     });
   }
 
+  const needsReview = Boolean(finding.needsHumanReview) || coverageUnknown;
+
   const risk = classify({
     today: t,
     deadline: calc ? calc.deadline : null,
     covered: covered && Boolean(calc),
-    needsReview: finding.needsHumanReview,
+    needsReview,
     payout,
     config,
   });
@@ -55,7 +159,9 @@ export function buildAssessment(invoice, vendor, finding) {
   return {
     invoice,
     vendor,
+    vendorFinding,
     finding,
+    coverage,
     covered,
     calc,
     risk,
@@ -63,50 +169,35 @@ export function buildAssessment(invoice, vendor, finding) {
     exposure,
     autoExecutable,
     needsApproval: !autoExecutable,
-    actionable: [RISK.RED, RISK.AMBER].includes(risk.level) && !payout,
-    config: { taxRatePct: config.taxRatePct, bufferDays: config.bufferDays, autoExecuteThreshold: config.autoExecuteThreshold },
+    actionable: [RISK.RED, RISK.AMBER].includes(risk.level) && !payout && !needsReview,
+    config: {
+      taxRatePct: config.taxRatePct,
+      bufferDays: config.bufferDays,
+      autoExecuteThreshold: config.autoExecuteThreshold,
+    },
     today: t,
   };
 }
 
-/**
- * Assess the whole ledger. Invoices are independent, but each one is a whole
- * agentic loop -- firing them all at once is ~5 requests x N invoices in the
- * same second, which instantly trips a free-tier per-minute quota. Cap the
- * concurrency instead. Raise LLM_CONCURRENCY on a paid key.
- */
-export async function assessAll(opts = {}) {
-  const invoices = store.getInvoices();
-  const limit = Math.max(1, Number(process.env.LLM_CONCURRENCY) || 2);
-  const results = new Array(invoices.length);
-  let next = 0;
-
-  const worker = async () => {
-    while (next < invoices.length) {
-      const i = next;
-      next += 1;
-      results[i] = await assessInvoice(invoices[i], opts);
-    }
-  };
-
-  await Promise.all(Array.from({ length: Math.min(limit, invoices.length) }, worker));
+export async function assessLiveLedger(opts = {}) {
+  const invoices = store.getLiveInvoices();
+  const results = await pool(invoices, (inv) => assessInvoice(inv, opts));
   return rankAssessments(results);
 }
 
-/** Rebuild every assessment from cached findings -- cheap, no model calls. */
-export function assessAllCached() {
-  const results = store.getInvoices().map((inv) => {
-    const finding = store.getFinding(inv.id);
+export function assessLiveCached() {
+  const results = store.getLiveInvoices().map((inv) => {
+    const finding = store.getInvoiceFinding(inv.id);
     if (!finding) return null;
-    return buildAssessment(inv, store.getVendor(inv.vendorId), finding);
+    const vendor = store.getVendor(inv.vendorId);
+    if (!store.getVendorFinding(vendor.id)) return null;
+    return buildAssessment(inv, vendor, finding);
   }).filter(Boolean);
   return rankAssessments(results);
 }
 
-/** Attach the readable rationale. Separate call so the queue renders instantly. */
 export async function withExplanation(assessment) {
-  const recommendation = await explain(assessment);
-  return { ...assessment, recommendation };
+  return { ...assessment, recommendation: await explain(assessment) };
 }
 
 export function portfolioSummary(assessments) {

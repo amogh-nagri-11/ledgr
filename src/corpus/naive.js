@@ -38,7 +38,7 @@ function overlap(a, b) {
   const ta = tokens(a);
   const tb = tokens(b);
   if (!ta.length || !tb.length) return 0;
-  const hit = (t, list) => list.some((o) => o === t || (t.length >= 4 && (o.startsWith(t) || t.startsWith(o))));
+  const hit = (t, list) => list.some((o) => o === t || (t.length >= 4 && o.length >= 4 && (o.startsWith(t) || t.startsWith(o))));
   const fwd = ta.filter((t) => hit(t, tb)).length / ta.length;
   const rev = tb.filter((t) => hit(t, ta)).length / tb.length;
   return (fwd + rev) / 2;
