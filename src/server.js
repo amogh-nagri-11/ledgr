@@ -9,7 +9,7 @@ import {
   portfolioSummary, sweepPortfolio, sweepVendor, coverageFor,
 } from './assess.js';
 import { runRetroAudit } from './audit/retro.js';
-import { llmAvailable, describeProvider, quotaState } from './agent/llm.js';
+import { llmAvailable, describeProvider, quotaState, tokenUsage } from './agent/llm.js';
 import { createPayout, fetchPayoutStatus, mode as payoutMode } from './razorpayx.js';
 import { today, isValidISODate } from './engine/dates.js';
 import * as corpus from './corpus/index.js';
@@ -28,6 +28,8 @@ function envelope(assessments) {
     config: store.getConfig(),
     mode: { ai: llmAvailable(), provider: describeProvider(), payouts: payoutMode(), quota: quotaState() },
     sweep: sweepStatus(),
+    analysis: analysisStatus(),
+    tokens: tokenUsage(),
     summary: portfolioSummary(assessments),
     assessments,
   };
@@ -144,13 +146,37 @@ app.get('/api/vendors', (req, res) => res.json({ vendors: vendorRows() }));
 
 // --------------------------------------------- phase 2: live ledger analysis
 
+let analysisJob = null;
+
+function analysisStatus() {
+  const total = store.getLiveInvoices().length;
+  const resolved = store.getLiveInvoices()
+    .filter((i) => store.getInvoiceFinding(i.id)).length;
+  return {
+    done: resolved,
+    total,
+    complete: resolved === total,
+    running: Boolean(analysisJob && analysisJob.running),
+    current: analysisJob ? analysisJob.current : null,
+    error: analysisJob ? analysisJob.error : null,
+  };
+}
+
+app.get('/api/analyze/status', (req, res) => res.json(envelope(assessLiveCached())));
+
+/**
+ * Like the sweep, this runs in the background. A 25-invoice AI pass can take
+ * twenty minutes on a rate-limited free tier, and holding an HTTP request open
+ * for that long just gets it killed -- which is exactly what happened, losing
+ * the tail of a run whose findings had already been paid for.
+ */
 app.post('/api/analyze', async (req, res) => {
-  const { invoiceId, refresh = true, forceHeuristic = false } = req.body || {};
+  const { invoiceId, refresh = false, forceHeuristic = false } = req.body || {};
   try {
     if (invoiceId) {
       const invoice = store.getInvoice(invoiceId);
       if (!invoice) return res.status(404).json({ error: 'No such invoice' });
-      const a = await assessInvoice(invoice, { refresh, forceHeuristic });
+      const a = await assessInvoice(invoice, { refresh: true, forceHeuristic });
       store.audit({
         type: 'invoice_analysis', invoiceId, actor: 'ledgr-invoice-agent',
         detail: `Clock starts ${a.finding.clockStart.date} (${a.finding.clockStart.basis}); coverage ${a.coverage?.result} (${a.coverage?.reasonCode}); ${a.calc ? `deadline ${a.calc.deadline}` : 'no statutory deadline'}; risk ${a.risk.level}. Via ${a.finding.mode}.`,
@@ -159,12 +185,36 @@ app.post('/api/analyze', async (req, res) => {
       return res.json(envelope(assessLiveCached()));
     }
 
-    const assessments = await assessLiveLedger({ refresh, forceHeuristic });
-    store.audit({
-      type: 'ledger_analysis', actor: 'ledgr-invoice-agent',
-      detail: `Analysed ${assessments.length} live payables. ${assessments.filter((a) => a.risk.level === 'red').length} red, ${assessments.filter((a) => a.risk.level === 'grey').length} held for review.`,
-    });
-    res.json(envelope(assessments));
+    if (analysisJob && analysisJob.running) {
+      return res.status(409).json({ error: 'An analysis is already running.', analysis: analysisStatus() });
+    }
+
+    analysisJob = { running: true, current: null, error: null, startedAt: new Date().toISOString() };
+
+    (async () => {
+      const started = Date.now();
+      try {
+        const assessments = await assessLiveLedger({
+          refresh,
+          forceHeuristic,
+          onProgress: (done, total, id) => { analysisJob.current = id; },
+        });
+        store.audit({
+          type: 'ledger_analysis', actor: 'ledgr-invoice-agent',
+          detail: `Analysed ${assessments.length} live payables in ${Math.round((Date.now() - started) / 1000)}s. `
+            + `${assessments.filter((a) => a.risk.level === 'red').length} red, `
+            + `${assessments.filter((a) => a.risk.level === 'grey').length} held for review.`,
+        });
+      } catch (err) {
+        console.error(err);
+        analysisJob.error = err.message;
+      } finally {
+        analysisJob.running = false;
+        analysisJob.current = null;
+      }
+    })();
+
+    res.status(202).json({ started: true, analysis: analysisStatus() });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

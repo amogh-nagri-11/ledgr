@@ -205,6 +205,19 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
 
     const message = json?.choices?.[0]?.message;
     if (!message) throw new Error(`${provider.label} returned no message: ${text.slice(0, 200)}`);
+
+    // Token accounting. The binding constraint on free tiers is tokens per
+    // minute, not requests, so "how many tokens did this decision cost" is the
+    // number that actually governs throughput.
+    const u = json.usage || {};
+    tokenLedger.calls += 1;
+    tokenLedger.prompt += Number(u.prompt_tokens || 0);
+    tokenLedger.completion += Number(u.completion_tokens || 0);
+    tokenLedger.total += Number(u.total_tokens || 0);
+    // Deliberately NOT attached to `message`: the caller pushes that object
+    // straight back into the conversation, and providers reject unknown
+    // properties on an assistant message.
+
     return message;
   }
 
@@ -220,6 +233,20 @@ let quotaExhaustedUntil = 0;
 
 /** Set when the configured model id is rejected by the provider. */
 let modelUnavailable = null;
+
+/** Running token spend, so throughput work can be measured rather than guessed. */
+const tokenLedger = { calls: 0, prompt: 0, completion: 0, total: 0 };
+
+export function tokenUsage() {
+  return {
+    ...tokenLedger,
+    avgPerCall: tokenLedger.calls ? Math.round(tokenLedger.total / tokenLedger.calls) : 0,
+  };
+}
+
+export function resetTokenUsage() {
+  Object.assign(tokenLedger, { calls: 0, prompt: 0, completion: 0, total: 0 });
+}
 
 /** What the provider says this key can actually use. */
 export async function listModels(provider = activeProvider()) {

@@ -133,8 +133,12 @@ export async function assessInvoice(invoice, { refresh = false, forceHeuristic =
     await sweepVendor(vendor, { forceHeuristic });
   }
 
+  // As with vendors: a finding that fell back to the heuristic arm because the
+  // provider was rate-limited is not a resolved finding. Re-running should
+  // retry it, so AI coverage accumulates across passes.
   let finding = store.getInvoiceFinding(invoice.id);
-  if (!finding || refresh) {
+  const unresolved = !finding || (!forceHeuristic && finding.mode === 'heuristic_fallback');
+  if (unresolved || refresh) {
     finding = await resolveInvoice(invoice, vendor, { forceHeuristic });
     store.setInvoiceFinding(invoice.id, finding);
   }
@@ -200,9 +204,15 @@ export function buildAssessment(invoice, vendor, finding) {
   };
 }
 
-export async function assessLiveLedger(opts = {}) {
+export async function assessLiveLedger({ onProgress, ...opts } = {}) {
   const invoices = store.getLiveInvoices();
-  const results = await pool(invoices, (inv) => assessInvoice(inv, opts));
+  let done = 0;
+  const results = await pool(invoices, async (inv) => {
+    const a = await assessInvoice(inv, opts);
+    done += 1;
+    if (onProgress) onProgress(done, invoices.length, inv.id);
+    return a;
+  });
   return rankAssessments(results);
 }
 
