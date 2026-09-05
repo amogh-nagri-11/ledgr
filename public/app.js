@@ -515,7 +515,20 @@ async function runSweep(forceHeuristic) {
 }
 
 $('btnSweep').addEventListener('click', () => runSweep(false));
-$('btnSweepFast').addEventListener('click', () => runSweep(true));
+
+$('btnSweepFast').addEventListener('click', () => {
+  // A heuristic sweep overwrites every cached finding, and AI findings are
+  // expensive -- a full portfolio pass costs half an hour against a free-tier
+  // token budget. Losing them to a misclick is not recoverable in the room.
+  const aiCount = vendorRows.filter((r) => r.finding && r.finding.mode === 'ai').length;
+  const warning = [
+    `This overwrites ${aiCount} AI-classified vendor${aiCount > 1 ? 's' : ''} with heuristic results.`,
+    'Those took real API quota to produce and cannot be regenerated quickly.',
+    'Continue?',
+  ].join('\n\n');
+  if (aiCount && !confirm(warning)) return;
+  runSweep(true);
+});
 
 $('btnAnalyze').addEventListener('click', async () => {
   const btn = $('btnAnalyze');

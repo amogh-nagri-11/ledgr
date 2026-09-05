@@ -1,109 +1,110 @@
-# Ledgr — MVP
+# Ledgr
 
-AI payment-compliance controller for **Section 43B(h)**. Full spec in [`LEDGR.md`](./LEDGR.md).
+**Section 43B(h) payment-compliance controller.** Full spec in [`LEDGR.md`](./LEDGR.md).
 
-Pay a Udyam-registered micro or small enterprise late and you lose the tax deduction on that expense for the year. Ledgr ties that statutory clock to the payout actually sitting in RazorpayX, explains each call, and executes on approval.
+Pay a Udyam-registered micro or small enterprise late and you lose the income-tax deduction on that expense for the year. Not a fine — the expense simply stops being deductible, so the tax bill goes up. On a ₹5,00,000 invoice at 25% that is ₹1,25,000, purely from timing.
+
+Ledgr works out which suppliers the section actually reaches, what the real deadline is on each unpaid bill, and what last year already cost — then executes the payout through RazorpayX and closes the item only when the money is confirmed to have moved.
 
 ```
 npm install
-cp .env.example .env      # optional — runs without any keys
+cp .env.example .env      # optional — runs fully without any keys
 npm start                 # http://localhost:3000
 ```
 
-Click **Run compliance analysis**, then click any row to see the evidence chain.
+Then, in order: **Run portfolio sweep** → **Analyse live ledger** → the **Retroactive audit** tab.
 
-**To convince yourself it actually works, follow [`TESTING.md`](./TESTING.md)** — eight browser tests, ten minutes, each one checkable by hand.
+For a hands-on walkthrough with expected values, follow [`TESTING.md`](./TESTING.md).
 
-## What's built
+---
 
-Three phases, in order:
+## What it does
 
-**1 · Portfolio sweep** — one investigation per *vendor*, cached and re-verified on demand. Validates the declared Udyam number (or finds one by name), resolves identity ambiguity with the GSTIN state prefix and the supply history, and classifies registered vs actual activity. 24 vendors and 210 invoices is 24 investigations, not 210.
+**1 · Portfolio sweep** — one investigation per *vendor*, cached. Validates a declared Udyam number or finds one by name, resolves identity ambiguity using the GSTIN state prefix and the supply history, and separates registered activity from what the vendor actually does. 24 vendors and 210 invoices is 24 investigations, not 210.
 
-**2 · Live queue** — one investigation per *payable*. Which agreement governs, what term it states, when the clock actually started, and what the supplier really did on this supply.
+**2 · Live queue** — one investigation per *payable*. Which agreement governs, what term it states, and — the part nothing else does — **when the statutory clock actually started.** That is not the invoice date; it is when the goods were accepted, which moves if there was a dispute or nobody signed for delivery.
 
-**3 · Retroactive audit** — reconstructs FY 2025-26, judging coverage as at each supply date, and reports decomposed by confidence rather than as a single number.
+**3 · Retroactive audit** — reconstructs FY 2025-26 by judging coverage as at *each supply date*, and reports decomposed by confidence rather than as one number.
 
-Then execution: bounded auto-execute under a threshold, human approval above it, and a compliance item that **closes only when RazorpayX confirms the money moved**.
+Then execution: auto-execute under a configurable threshold, human approval above it, and a compliance item that **closes only when RazorpayX confirms the money moved**.
 
 ## The architectural split
 
-**`src/agent/` may never decide anything.** Both agents return evidence and confidence. Neither can return "covered" or a deadline — the submission schemas have no such field, and there is a test asserting it.
+**`src/agent/` may never decide anything.** Both agents return evidence and confidence. Neither can return "covered" or a deadline — the submission schemas have no such field, and a test asserts the model is never offered one.
 
-**`src/engine/` decides.** Two hardcoded rules:
+**`src/engine/` decides**, with hardcoded rules:
 
 - `deadline.js` — the 45/15-day arithmetic and the statutory cap
-- `coverage.js` — does s.43B(h) engage at all: micro/small, registration live *on the supply date*, and not a trading enterprise unless the supply itself rebuts the registered activity
+- `coverage.js` — does s.43B(h) engage: micro or small, registration live *on the supply date*, and not a trading enterprise unless the supply itself rebuts the registered activity
+- `risk.js` — the deadline against the actual RazorpayX payout date
 
-Coverage gets the same treatment as the dates deliberately. Letting a model return `covered: true` would reintroduce exactly the exposure the deadline engine exists to remove.
+Coverage is a rule for the same reason the dates are: a wrong coverage call costs exactly as much as a wrong deadline, so neither is left to a model.
 
-## Choosing an AI provider
+## Measuring whether the AI earns its place
 
-The agent runs on any OpenAI-compatible chat-completions endpoint, so you can use whichever free tier you can get. `src/agent/llm.js` auto-detects from whichever key is present:
-
-| Provider | Env var | Default model | Cost |
-|---|---|---|---|
-| **Google Gemini** | `GEMINI_API_KEY` | `gemini-3.6-flash` | Free tier, no card — [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| **Groq** | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Free tier, very fast — [console.groq.com/keys](https://console.groq.com/keys) |
-| **OpenRouter** | `OPENROUTER_API_KEY` | `meta-llama/llama-3.3-70b-instruct:free` | Free models — [openrouter.ai/keys](https://openrouter.ai/keys) |
-| **Ollama** | none | `qwen2.5:7b` | Local, no account — set `LLM_PROVIDER=ollama` |
-| **OpenAI** | `OPENAI_API_KEY` | `gpt-4o-mini` | Paid |
-
-Override with `LLM_PROVIDER`, `LLM_MODEL`, `LLM_BASE_URL`. Model ids get retired — if you get a 404 saying the model is no longer available, list what your key can actually see:
-
-```powershell
-curl.exe -s -H "Authorization: Bearer $env:GEMINI_API_KEY" https://generativelanguage.googleapis.com/v1beta/openai/models
+```
+npm run corpus      # the corpus, and the non-AI baseline against ground truth
+npm run ablation    # naive vs agent vs truth, scored and costed
 ```
 
-**Free-tier throughput is the real constraint.** Each invoice is a full agentic loop (~5-6 requests, ~60s), so the ledger is analysed at a concurrency of 2 (`LLM_CONCURRENCY`) and 429/503 responses are retried with backoff. Even so, analysing all 11 invoices on a free key will trip a per-minute quota. For a live demo, leave the bulk on heuristic and use **Re-analyse this row** on the two or three rows you want to show. The provider in use is shown in the header chip and badged on every row, so you always know what produced a finding.
+Neither makes an API call. `ablation` reads cached findings, so it reruns instantly.
 
-Because free-tier models are small, `submit_finding` takes a **flat** object of scalars rather than a nested one — far more reliable tool-calling — and `normalise()` in `src/agent/resolve.js` rebuilds the structured finding and clamps whatever comes back.
+Both arms are graded through `src/corpus/score.js`, so they cannot be judged on different criteria, and errors are split by direction because they cost different things — a false positive burns working capital, a false negative silently loses a deduction, an escalation costs a human five minutes. The report also states how much of the run it is scoring, and warns when the AI arm is incomplete.
 
-## Running without any keys
+Latest complete vendor-arm result:
 
-Both external dependencies degrade instead of failing:
+| | naive | agent |
+|---|---|---|
+| identity correct | 20/24 | **24/24** |
+| coverage correct | 19/24 | **23/24** |
+| false positives | 3 — ₹45,19,100 of payments | **0** |
+| false negatives | 1 | **0** |
+| historical invoices misclassified | 59/185 — ₹1.06 Cr | **8/185 — ₹27.6L** |
 
-- **No provider key** → `src/agent/heuristic.js` runs the same tools in the same order and emits the same finding shape using regex and token overlap. The header chip reads *heuristic fallback*, and each row is badged with the mode that produced it. This is also what the AI is measured against — the heuristic cannot tell a payment term from an objection window in a clause it hasn't been hand-tuned for.
-- **No `RAZORPAYX_*` keys** → payouts are simulated and stamped `source: "mock"`. With sandbox keys set, the same click hits `POST /v1/payouts` for real.
+Both arms had identical registry access. The difference is judgement, not data.
 
-A provider error or timeout at runtime falls back the same way rather than breaking the queue, and the reason is recorded on the finding for the audit trail.
+## Providers
 
-## Demo script
+The agent runs on any OpenAI-compatible chat-completions endpoint. `src/agent/llm.js` auto-detects from whichever key is present.
 
-The seeded ledger is 11 invoices, dated relative to today, covering every branch:
+| Provider | Env var | Default model |
+|---|---|---|
+| **Groq** | `GROQ_API_KEY` | `openai/gpt-oss-120b` |
+| **Google Gemini** | `GEMINI_API_KEY` | `gemini-3.5-flash-lite` |
+| **OpenRouter** | `OPENROUTER_API_KEY` | see note below |
+| **Ollama** | none — set `LLM_PROVIDER=ollama` | `qwen2.5:7b` |
+| **OpenAI** | `OPENAI_API_KEY` | `gpt-4o-mini` |
 
-| Invoice | What it demonstrates |
-|---|---|
-| **INV-2041** Sharma Ent. ₹5,00,000 | The spec's worked example. Agreement → 45 days → red, ₹1,25,000 at stake. |
-| **INV-2042** Nandi Precision ₹2,75,000 | Contract says **Net 60**. The statute caps it at 45, moving the deadline two weeks earlier. |
-| **INV-2044** Meghdoot ₹1,85,000 | Delivered 40 days ago, but a written objection over damaged crates restarted the clock at re-acceptance. Counting from the invoice date would call this a breach; counting correctly, there are days left. |
-| **INV-2043 / 2048** Aruna Pkg | No written agreement → 15 days. INV-2048 (₹8,400) is under the auto-execute threshold. |
-| **INV-2045** Vertex | Registered but **medium** — 43B(h) doesn't engage. Green. |
-| **INV-2046** K.P. Works | No GRN was ever raised, and two Delhi registrations plausibly match the name → ⚪ needs review, and paying it is blocked. |
-| **INV-2047** Orion Steel | Not in the registry at all. Green. |
-| **INV-2049** Sharma Ent. ₹95,000 | A payout **is** scheduled — two days after the deadline. Red. A calendar-only tracker calls this handled. |
-| **INV-2051** Meghdoot ₹42,000 | Amber: 12 days out, schedule with buffer. |
-| **INV-2050** Nandi ₹1,50,000 | Paid inside the deadline. Closed. |
+Override with `LLM_PROVIDER`, `LLM_MODEL`, `LLM_BASE_URL`, `LLM_CONCURRENCY`, `LLM_TIMEOUT_MS`.
+
+**Model ids get retired, and a dead one is the most misleading failure in this system** — every finding silently falls back to the heuristic arm, the UI honestly says "heuristic", and it looks like the AI underperformed when it never ran. Both defaults above were wrong at some point during this project for exactly that reason. A 404 now names the model and lists what your key can actually see. To check first:
+
+```powershell
+curl.exe -s -H "Authorization: Bearer $env:GROQ_API_KEY" https://api.groq.com/openai/v1/models
+```
+
+**Free-tier throughput is the binding constraint, and it is tokens per minute, not requests.** Groq meters 8,000 TPM; the document-heavy invoices cost ~2,000 tokens a call. A full pass therefore takes a while and may not finish in one go — so sweeps and analyses **retry anything that fell back**, letting AI coverage accumulate across runs. Quota exhaustion trips a circuit breaker rather than retrying a ceiling that cannot recover.
+
+## Running with no keys at all
+
+Both external dependencies degrade rather than fail:
+
+- **No provider key** → the heuristic arm runs the same tools in the same order and emits the same finding shape, using regex and token overlap. Every row is badged with the arm that produced it.
+- **No `RAZORPAYX_*` keys** → payouts are simulated and stamped `source: "mock"`. With sandbox keys the same click hits `POST /v1/payouts`.
+
+A provider error or timeout falls back the same way and records the reason on the finding.
+
+## The corpus
+
+`src/corpus/` — 24 vendors, a 26-entry Udyam registry with NIC activity codes, 19 contract documents, 55 raw acceptance documents, 25 live payables and 185 historical invoices, all with ground-truth labels. Synthetic and deterministic from a fixed seed. See [`PROVENANCE.md`](./PROVENANCE.md) for why, and for what production would use instead.
+
+Acceptance evidence is deliberately **untyped** — documents carry a medium (email, scan, system note) and a body, nothing more. An earlier corpus tagged events `objection_raised`, which handed the model its answer and let a regex reproduce the agent's output exactly. A test now asserts no document carries a `type` field.
 
 ## Policy vs statute
 
-The buffer, the red/amber windows, the tax rate and the auto-execute threshold are configurable from the toolbar. **The 45/15-day rule is not** — it is statute, hardcoded in `src/engine/deadline.js`.
+Buffer days, red/amber windows, tax rate, auto-execute threshold and the identity confidence floor are all configurable from the toolbar. **The 45/15-day rule and the coverage rule are not** — they are statute, hardcoded, and unit-tested.
 
 Ledgr recommends a pay-by date; it does not decide to wait. Nothing above the threshold moves without a click.
-
-## The corpus and the ablation
-
-`src/corpus/` is the test corpus the agent reasons over: 24 vendors, a 26-entry Udyam registry with NIC activity codes, 19 contract documents, 55 raw acceptance documents, 25 live payables and 185 historical invoices for FY 2025-26. Fully synthetic and fully labelled — see [`PROVENANCE.md`](./PROVENANCE.md).
-
-```
-npm run corpus
-```
-
-That prints what the corpus contains, what each designed case is built to defeat, and then scores a **non-AI baseline** — string matching and regex, no model — against ground truth. That is the floor the agent has to beat, and the reason the corpus is synthetic: accuracy claims need a correct answer to score against, and real vendor data does not come labelled.
-
-The report also names the designed cases the naive arm *survives*, so cases that fail to discriminate are visible rather than hidden.
-
-Acceptance evidence is deliberately untyped. The previous corpus tagged events `objection_raised`, which handed the model its answer — a regex reproduced the agent's deadlines exactly. Documents now carry only a medium (email, scan, system note); what a document *means* has to be read out of its body.
 
 ## Tests
 
@@ -111,15 +112,8 @@ Acceptance evidence is deliberately untyped. The previous corpus tagged events `
 npm test
 ```
 
-18 tests, no API calls and no key needed:
+40 tests, no API calls and no key required — the statutory engine, the coverage rule, corpus integrity (including that the naive baseline actually fails on it), and both agent loops driven against a stub OpenAI-compatible server.
 
-- **`test/engine.test.js`** — the statutory calculation and risk classification: the 45-day cap, the no-agreement default, medium-enterprise exclusion, a payout scheduled past the deadline, and the invariant that changing the buffer never moves the deadline.
-- **`test/agent-loop.test.js`** — the agentic loop against a stub OpenAI-compatible server: multi-turn tool calls, real tool output fed back by `tool_call_id`, the flat→nested mapping, junk values from a weak model getting clamped, a prose answer being nudged back to the tools, and a dead provider degrading to the heuristic.
+## Not legal or tax advice
 
-## Not built, deliberately
-
-Cash-flow / working-capital optimisation. There is no real treasury data here, so "the financially optimal moment to pay" would be a fabricated number dressed as a financial decision. The buffer is an honest configurable heuristic instead.
-
-## Legal position
-
-Sandbox keys only, seeded fake vendors, no real money. Every flag is framed as an informational risk indicator to verify with a CA, not a compliance verdict.
+Every flag is an informational risk indicator to verify with a CA. The trading-enterprise exclusion in particular is a live practitioner nuance and is flagged unconfirmed in `PROVENANCE.md`; it drives the largest single number in the ablation.
