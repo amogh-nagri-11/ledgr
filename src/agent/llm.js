@@ -133,7 +133,13 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
   // to the heuristic over one blip.
   let lastError;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    // fetch has no default timeout in Node. Without this, a provider that
+    // accepts the connection and then goes quiet blocks the entire run
+    // indefinitely -- no error, no progress, nothing in the log. A 25-invoice
+    // pass stalled exactly this way.
     let res;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       res = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -142,12 +148,16 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
           Authorization: `Bearer ${provider.apiKey}`,
         },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
     } catch (err) {
-      lastError = new Error(`${provider.label}: ${err.message}`);
+      const timedOut = err.name === 'AbortError';
+      lastError = new Error(`${provider.label}: ${timedOut ? `no response within ${REQUEST_TIMEOUT_MS / 1000}s` : err.message}`);
       if (attempt === MAX_RETRIES) break;
       await sleep(backoffMs(attempt));
       continue;
+    } finally {
+      clearTimeout(timer);
     }
 
     const text = await res.text();
@@ -225,6 +235,9 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
 }
 
 const MAX_RETRIES = 3;
+
+/** No provider should hold a connection open longer than this. */
+const REQUEST_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS) || 90000;
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 
 /** Circuit breaker for quota ceilings, which retrying cannot fix. */
