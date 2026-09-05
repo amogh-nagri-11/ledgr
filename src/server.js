@@ -28,6 +28,7 @@ function envelope(assessments) {
     config: store.getConfig(),
     mode: { ai: llmAvailable(), provider: describeProvider(), payouts: payoutMode(), quota: quotaState() },
     sweep: sweepStatus(),
+    freshness: store.findingsStale(),
     analysis: analysisStatus(),
     tokens: tokenUsage(),
     summary: portfolioSummary(assessments),
@@ -423,5 +424,17 @@ app.listen(PORT, () => {
   console.log(`  AI layer:  ${describeProvider() || 'heuristic fallback (set GEMINI_API_KEY or GROQ_API_KEY)'}`);
   console.log(`  Payouts:   RazorpayX ${payoutMode()}`);
   const s = corpus.stats();
-  console.log(`  Corpus:    ${s.vendors} vendors · ${s.liveInvoices} live · ${s.historicalInvoices} historical (SYNTHETIC)\n`);
+  console.log(`  Corpus:    ${s.vendors} vendors · ${s.liveInvoices} live · ${s.historicalInvoices} historical (SYNTHETIC)`);
+
+  // Live invoice dates move with the calendar, so findings cached on an
+  // earlier day describe documents that have since shifted. Better to say so
+  // at boot than to have someone find it mid-demo.
+  const fresh = store.findingsStale();
+  if (fresh.stale) {
+    console.log(`\n  ! Cached findings were produced on ${fresh.producedOn}; today is ${fresh.today}.`);
+    console.log('    Live invoice dates move daily, so their evidence no longer lines up');
+    console.log('    with the documents on screen. Refresh with:  npm run complete\n');
+  } else {
+    console.log('');
+  }
 });

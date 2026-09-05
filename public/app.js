@@ -40,6 +40,15 @@ function renderChrome() {
   $('modeSweep').classList.toggle('live', state.sweep.complete);
   $('modeDate').textContent = `Today ${state.today}`;
 
+  // Live invoice dates move with the calendar, so findings cached on an earlier
+  // day describe documents that have since shifted. Say so loudly -- discovering
+  // it mid-demo is much worse than a banner.
+  const fresh = state.freshness;
+  $('modeDate').classList.toggle('warn', Boolean(fresh && fresh.stale));
+  if (fresh && fresh.stale) {
+    $('modeDate').textContent = `findings from ${fresh.producedOn} — stale`;
+  }
+
   $('cfgBuffer').value = state.config.bufferDays;
   $('cfgTax').value = state.config.taxRatePct;
   $('cfgThreshold').value = state.config.autoExecuteThreshold;

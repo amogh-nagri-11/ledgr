@@ -30,6 +30,10 @@ function freshState() {
     extraInvoices: [],     // added through manual intake
     extraDocuments: {},    // invoiceId -> acceptance documents captured at intake
     recommendations: {},   // invoiceId -> { forFinding, recommendation }
+    // Live invoice dates are relative to today, so a finding is only
+    // consistent with the corpus it was produced against. Recorded so a stale
+    // cache is detectable rather than a surprise mid-demo.
+    corpusDate: null,
     audit: [],
   };
 }
@@ -47,6 +51,7 @@ export function load() {
       state.extraInvoices = disk.extraInvoices || [];
       state.extraDocuments = disk.extraDocuments || {};
       state.recommendations = disk.recommendations || {};
+      state.corpusDate = disk.corpusDate || null;
       state.audit = disk.audit || [];
     }
   } catch (err) {
@@ -136,6 +141,7 @@ export const getVendorFinding = (vendorId) => state.vendorFindings[vendorId] || 
 
 export function setVendorFinding(vendorId, finding) {
   state.vendorFindings[vendorId] = finding;
+  stampCorpusDate();
   persist();
   return finding;
 }
@@ -144,8 +150,27 @@ export const getInvoiceFinding = (invoiceId) => state.invoiceFindings[invoiceId]
 
 export function setInvoiceFinding(invoiceId, finding) {
   state.invoiceFindings[invoiceId] = finding;
+  stampCorpusDate();
   persist();
   return finding;
+}
+
+/**
+ * Findings are only consistent with the corpus they were produced against,
+ * because live invoice dates move with the calendar. A finding whose clock
+ * start refers to a document date that has since shifted is not wrong exactly,
+ * but its evidence no longer lines up with what the UI shows -- which is worse
+ * than wrong in front of an audience.
+ */
+export function findingsStale() {
+  const today = new Date().toISOString().slice(0, 10);
+  const has = Object.keys(state.vendorFindings).length || Object.keys(state.invoiceFindings).length;
+  if (!has || !state.corpusDate) return { stale: false, producedOn: state.corpusDate, today };
+  return { stale: state.corpusDate !== today, producedOn: state.corpusDate, today };
+}
+
+function stampCorpusDate() {
+  state.corpusDate = new Date().toISOString().slice(0, 10);
 }
 
 export const sweepComplete = () => corpus.vendors.every((v) => state.vendorFindings[v.id]);
