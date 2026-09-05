@@ -2,7 +2,6 @@
   "_": "Beats for the ?demo=1 autopilot. Captions are the spoken lines from DEMO.md. `npm run demo:voice` reads this file, generates one mp3 per beat with edge-tts, and writes `audio` and `seconds` back in. With no audio the runner times each beat from its word count at `wpm`.",
   "wpm": 135,
   "voice": "en-IN-PrabhatNeural",
-
   "slides": {
     "problem": {
       "kicker": "Section 43B(h), Income Tax Act",
@@ -30,90 +29,347 @@
       "body": "<p class=\"big\">That's the wrong date — and we can show you exactly what it costs.</p>"
     }
   },
-
   "beats": [
-    { "id": "s1a", "section": "1 · The problem", "action": { "type": "slide", "id": "problem" },
-      "caption": "Since FY24, if you pay a registered small supplier late, you don't just owe interest — you lose the tax deduction on that purchase for the whole year." },
-    { "id": "s1b", "section": "1 · The problem",
-      "caption": "Five lakh invoice, twenty-five percent tax: one and a quarter lakh gone, purely because of when you paid. Forty-five days if there's a contract, fifteen if there isn't." },
-    { "id": "s1c", "section": "1 · The problem",
-      "caption": "Almost nobody tracks it, because the hard part was never counting to forty-five. It's knowing which suppliers it applies to, and when the clock actually started." },
-
-    { "id": "s2a", "section": "2 · The solution", "action": { "type": "slide", "id": "phases" },
-      "caption": "So we built Ledgr. Three things, sitting on top of your unpaid bills." },
-    { "id": "s2b", "section": "2 · The solution",
-      "caption": "It works out which of your suppliers the law actually reaches. Then on every bill it works out the real deadline, flags what's about to breach, and pays through RazorpayX before it does. And it looks backwards — what last year already cost you." },
-    { "id": "s2c", "section": "2 · The solution", "hold": 0.6,
-      "caption": "The two hard parts there are judgement, not arithmetic. Which supplier. And which date. That's where the AI is — and it's the only place it is." },
-
-    { "id": "s3a", "section": "3 · Agents report, rules decide", "action": { "type": "slide", "id": "split" },
-      "caption": "One decision matters more than the rest, so I'll show you that rather than the whole diagram." },
-    { "id": "s3b", "section": "3 · Agents report, rules decide",
-      "caption": "Two agents do the reading — contracts, delivery notes, email threads — and report what they found, with the evidence attached." },
-    { "id": "s3c", "section": "3 · Agents report, rules decide",
-      "caption": "But they decide nothing. Two hardcoded rules do that: does the law apply, and what's the deadline. The agents can't produce a deadline — that field doesn't exist in what they submit, and there's a test asserting it." },
-    { "id": "s3d", "section": "3 · Agents report, rules decide", "hold": 0.5,
-      "caption": "So the model can be wrong about something it read, and you'll see that on screen with its source. It can't be wrong about the answer." },
-
-    { "id": "s4a", "section": "4 · Who does the law reach?", "action": { "type": "tab", "id": "vendors" },
-      "caption": "Twenty-four suppliers. Which of them does the law actually cover? Sixteen in scope, six not, and two it won't answer." },
-    { "id": "s4b", "section": "4 · Who does the law reach?", "action": { "type": "openVendor", "id": "V007" },
-      "caption": "Registered, small, active — everything a simple check looks for. And still the wrong answer, because Orion is a registered wholesale trader, and trade sits outside this obligation." },
-    { "id": "s4c", "section": "4 · Who does the law reach?",
-      "caption": "Left, what the agent found. Right, the rule that decided, showing its working." },
-    { "id": "s4d", "section": "4 · Who does the law reach?", "action": { "type": "openVendor", "id": "V019", "close": "V007" },
-      "caption": "And this one it refuses. Nothing declared, nothing in the registry. Unresolved — not not-covered. Guessing there quietly loses a real deduction." },
-
-    { "id": "s5a", "section": "5 · What it already cost", "action": { "type": "retro" },
-      "caption": "That's today. This is last year — a hundred and eighty-five invoices." },
-    { "id": "s5b", "section": "5 · What it already cost", "action": { "type": "highlight", "selector": "#retro .decomp" },
-      "caption": "Twenty-nine lakh of exposure. And ninety-three lakh it excluded — payments a naive check would have had you chasing for nothing." },
-
-    { "id": "s6a", "section": "6 · The row we built this for", "action": { "type": "tab", "id": "queue" },
-      "caption": "Ten red right now. But this row is why the product exists." },
-    { "id": "s6b", "section": "6 · The row we built this for", "action": { "type": "openRow", "id": "INV-4124" },
-      "caption": "Dated the thirtieth of July, forty-five day terms. Every tool counts forty-five days from the invoice date. That's the wrong date — the clock runs from acceptance." },
-    { "id": "s6c", "section": "6 · The row we built this for", "action": { "type": "scrollTo", "selector": "[data-detail=\"INV-4124\"] h4" },
-      "caption": "Here's what the agent found — an email from the buyer's own stores team." },
-    { "id": "s6d", "section": "6 · The row we built this for", "style": "quote", "hold": 0.8,
-      "caption": "We have put the whole lot to one side in the yard, and we are not booking them into stores or raising a receipt note until the certificates reach us." },
-    { "id": "s6e", "section": "6 · The row we built this for",
-      "caption": "That's a refusal to accept. It never says reject. Never says object. So keyword matching walks straight past it, and starts the clock fifteen days early." },
-    { "id": "s6f", "section": "6 · The row we built this for", "hold": 2.0,
-      "caption": "They actually accepted on the fourteenth of August." },
-
-    { "id": "s7a", "section": "7 · Not staged", "optional": true,
-      "action": { "type": "newInvoice", "vendor": "V007", "amount": 200000, "desc": "TMT bars, bought in and resold" },
-      "caption": "One live. Two lakh, accepted today, from a registered small supplier." },
-    { "id": "s7b", "section": "7 · Not staged", "optional": true,
-      "caption": "Out of scope. Orion is a trader." },
-    { "id": "s7c", "section": "7 · Not staged", "optional": true,
-      "action": { "type": "newInvoice", "vendor": "V001", "amount": 200000, "desc": "Fabricated brackets, made to drawing" },
-      "caption": "Same amount, same dates. Only the supplier changes." },
-    { "id": "s7d", "section": "7 · Not staged", "optional": true,
-      "caption": "Forty-five day deadline, fifty thousand of exposure. Nothing about the money changed." },
-
-    { "id": "s8a", "section": "8 · Money moves", "action": { "type": "openRow", "id": "INV-4101", "close": "INV-4124" },
-      "caption": "Five lakh, over our auto-execute threshold, so it needs a person. This is a real RazorpayX payout call." },
-    { "id": "s8b", "section": "8 · Money moves", "action": { "type": "click", "selector": "[data-pay=\"INV-4101\"]" }, "hold": 0.8,
-      "caption": "Watch this. The row hasn't closed. It's asking me to confirm." },
-    { "id": "s8c", "section": "8 · Money moves",
-      "caption": "That's deliberate. A payout being requested isn't a compliance item being closed. It closes when RazorpayX confirms the money moved." },
-    { "id": "s8d", "section": "8 · Money moves", "action": { "type": "click", "selector": "[data-confirm=\"INV-4101\"]" },
-      "caption": "Now it's closed. Under ten thousand goes automatically. Above it, always a human." },
-
-    { "id": "s9a", "section": "9 · Does the AI earn its place?", "action": { "type": "slide", "id": "ablation" },
-      "caption": "This is the question I'd ask if I were sitting where you are." },
-    { "id": "s9b", "section": "9 · Does the AI earn its place?",
-      "caption": "Same pipeline twice. Once with the agents, once with string matching and no model. Same data, same scoring, both against answers we know are right." },
-    { "id": "s9c", "section": "9 · Does the AI earn its place?",
-      "caption": "String matching gets twenty of twenty-four suppliers. The agent gets twenty-four. On last year's ledger the simple version misreads fifty-nine invoices — over a crore. The agent misreads eight." },
-    { "id": "s9d", "section": "9 · Does the AI earn its place?",
-      "caption": "And the three it wrongly calls covered? Forty-five lakh you would have rushed for nothing." },
-    { "id": "s9e", "section": "9 · Does the AI earn its place?", "hold": 0.6,
-      "caption": "Identical access to the registry. The difference is judgement, not data." },
-
-    { "id": "s10", "section": "10 · Close", "action": { "type": "slide", "id": "close" }, "hold": 2.5,
-      "caption": "Everyone counts forty-five days from the invoice date. That's the wrong date — and we can show you exactly what it costs." }
+    {
+      "id": "s1a",
+      "section": "1 · The problem",
+      "action": {
+        "type": "slide",
+        "id": "problem"
+      },
+      "caption": "Since FY24, if you pay a registered small supplier late, you don't just owe interest — you lose the tax deduction on that purchase for the whole year.",
+      "audio": "demo-audio/s1a.mp3",
+      "seconds": 11.66
+    },
+    {
+      "id": "s1b",
+      "section": "1 · The problem",
+      "caption": "Five lakh invoice, twenty-five percent tax: one and a quarter lakh gone, purely because of when you paid. Forty-five days if there's a contract, fifteen if there isn't.",
+      "audio": "demo-audio/s1b.mp3",
+      "seconds": 13.92
+    },
+    {
+      "id": "s1c",
+      "section": "1 · The problem",
+      "caption": "Almost nobody tracks it, because the hard part was never counting to forty-five. It's knowing which suppliers it applies to, and when the clock actually started.",
+      "audio": "demo-audio/s1c.mp3",
+      "seconds": 12.22
+    },
+    {
+      "id": "s2a",
+      "section": "2 · The solution",
+      "action": {
+        "type": "slide",
+        "id": "phases"
+      },
+      "caption": "So we built Ledgr. Three things, sitting on top of your unpaid bills.",
+      "audio": "demo-audio/s2a.mp3",
+      "seconds": 6.89
+    },
+    {
+      "id": "s2b",
+      "section": "2 · The solution",
+      "caption": "It works out which of your suppliers the law actually reaches. Then on every bill it works out the real deadline, flags what's about to breach, and pays through RazorpayX before it does. And it looks backwards — what last year already cost you.",
+      "audio": "demo-audio/s2b.mp3",
+      "seconds": 19.1
+    },
+    {
+      "id": "s2c",
+      "section": "2 · The solution",
+      "hold": 0.6,
+      "caption": "The two hard parts there are judgement, not arithmetic. Which supplier. And which date. That's where the AI is — and it's the only place it is.",
+      "audio": "demo-audio/s2c.mp3",
+      "seconds": 13.27
+    },
+    {
+      "id": "s3a",
+      "section": "3 · Agents report, rules decide",
+      "action": {
+        "type": "slide",
+        "id": "split"
+      },
+      "caption": "One decision matters more than the rest, so I'll show you that rather than the whole diagram.",
+      "audio": "demo-audio/s3a.mp3",
+      "seconds": 6.94
+    },
+    {
+      "id": "s3b",
+      "section": "3 · Agents report, rules decide",
+      "caption": "Two agents do the reading — contracts, delivery notes, email threads — and report what they found, with the evidence attached.",
+      "audio": "demo-audio/s3b.mp3",
+      "seconds": 9.07
+    },
+    {
+      "id": "s3c",
+      "section": "3 · Agents report, rules decide",
+      "caption": "But they decide nothing. Two hardcoded rules do that: does the law apply, and what's the deadline. The agents can't produce a deadline — that field doesn't exist in what they submit, and there's a test asserting it.",
+      "audio": "demo-audio/s3c.mp3",
+      "seconds": 17.18
+    },
+    {
+      "id": "s3d",
+      "section": "3 · Agents report, rules decide",
+      "hold": 0.5,
+      "caption": "So the model can be wrong about something it read, and you'll see that on screen with its source. It can't be wrong about the answer.",
+      "audio": "demo-audio/s3d.mp3",
+      "seconds": 10.03
+    },
+    {
+      "id": "s4a",
+      "section": "4 · Who does the law reach?",
+      "action": {
+        "type": "tab",
+        "id": "vendors"
+      },
+      "caption": "Twenty-four suppliers. Which of them does the law actually cover? Sixteen in scope, six not, and two it won't answer.",
+      "audio": "demo-audio/s4a.mp3",
+      "seconds": 10.63
+    },
+    {
+      "id": "s4b",
+      "section": "4 · Who does the law reach?",
+      "action": {
+        "type": "openVendor",
+        "id": "V007"
+      },
+      "caption": "Registered, small, active — everything a simple check looks for. And still the wrong answer, because Orion is a registered wholesale trader, and trade sits outside this obligation.",
+      "audio": "demo-audio/s4b.mp3",
+      "seconds": 14.06
+    },
+    {
+      "id": "s4c",
+      "section": "4 · Who does the law reach?",
+      "caption": "Left, what the agent found. Right, the rule that decided, showing its working.",
+      "audio": "demo-audio/s4c.mp3",
+      "seconds": 7.44
+    },
+    {
+      "id": "s4d",
+      "section": "4 · Who does the law reach?",
+      "action": {
+        "type": "openVendor",
+        "id": "V019",
+        "close": "V007"
+      },
+      "caption": "And this one it refuses. Nothing declared, nothing in the registry. Unresolved — not not-covered. Guessing there quietly loses a real deduction.",
+      "audio": "demo-audio/s4d.mp3",
+      "seconds": 12.98
+    },
+    {
+      "id": "s5a",
+      "section": "5 · What it already cost",
+      "action": {
+        "type": "retro"
+      },
+      "caption": "That's today. This is last year — a hundred and eighty-five invoices.",
+      "audio": "demo-audio/s5a.mp3",
+      "seconds": 6.53
+    },
+    {
+      "id": "s5b",
+      "section": "5 · What it already cost",
+      "action": {
+        "type": "highlight",
+        "selector": "#retro .decomp"
+      },
+      "caption": "Twenty-nine lakh of exposure. And ninety-three lakh it excluded — payments a naive check would have had you chasing for nothing.",
+      "audio": "demo-audio/s5b.mp3",
+      "seconds": 10.01
+    },
+    {
+      "id": "s6a",
+      "section": "6 · The row we built this for",
+      "action": {
+        "type": "tab",
+        "id": "queue"
+      },
+      "caption": "Ten red right now. But this row is why the product exists.",
+      "audio": "demo-audio/s6a.mp3",
+      "seconds": 5.71
+    },
+    {
+      "id": "s6b",
+      "section": "6 · The row we built this for",
+      "action": {
+        "type": "openRow",
+        "id": "INV-4124"
+      },
+      "caption": "Dated the thirtieth of July, forty-five day terms. Every tool counts forty-five days from the invoice date. That's the wrong date — the clock runs from acceptance.",
+      "audio": "demo-audio/s6b.mp3",
+      "seconds": 13.22
+    },
+    {
+      "id": "s6c",
+      "section": "6 · The row we built this for",
+      "action": {
+        "type": "scrollTo",
+        "selector": "[data-detail=\"INV-4124\"] h4"
+      },
+      "caption": "Here's what the agent found — an email from the buyer's own stores team.",
+      "audio": "demo-audio/s6c.mp3",
+      "seconds": 6.1
+    },
+    {
+      "id": "s6d",
+      "section": "6 · The row we built this for",
+      "style": "quote",
+      "hold": 0.8,
+      "caption": "We have put the whole lot to one side in the yard, and we are not booking them into stores or raising a receipt note until the certificates reach us.",
+      "audio": "demo-audio/s6d.mp3",
+      "seconds": 10.78
+    },
+    {
+      "id": "s6e",
+      "section": "6 · The row we built this for",
+      "caption": "That's a refusal to accept. It never says reject. Never says object. So keyword matching walks straight past it, and starts the clock fifteen days early.",
+      "audio": "demo-audio/s6e.mp3",
+      "seconds": 13.8
+    },
+    {
+      "id": "s6f",
+      "section": "6 · The row we built this for",
+      "hold": 2,
+      "caption": "They actually accepted on the fourteenth of August.",
+      "audio": "demo-audio/s6f.mp3",
+      "seconds": 4.15
+    },
+    {
+      "id": "s7a",
+      "section": "7 · Not staged",
+      "optional": true,
+      "action": {
+        "type": "newInvoice",
+        "vendor": "V007",
+        "amount": 200000,
+        "desc": "TMT bars, bought in and resold"
+      },
+      "caption": "One live. Two lakh, accepted today, from a registered small supplier.",
+      "audio": "demo-audio/s7a.mp3",
+      "seconds": 6.72
+    },
+    {
+      "id": "s7b",
+      "section": "7 · Not staged",
+      "optional": true,
+      "caption": "Out of scope. Orion is a trader.",
+      "audio": "demo-audio/s7b.mp3",
+      "seconds": 4.06
+    },
+    {
+      "id": "s7c",
+      "section": "7 · Not staged",
+      "optional": true,
+      "action": {
+        "type": "newInvoice",
+        "vendor": "V001",
+        "amount": 200000,
+        "desc": "Fabricated brackets, made to drawing"
+      },
+      "caption": "Same amount, same dates. Only the supplier changes.",
+      "audio": "demo-audio/s7c.mp3",
+      "seconds": 5.42
+    },
+    {
+      "id": "s7d",
+      "section": "7 · Not staged",
+      "optional": true,
+      "caption": "Forty-five day deadline, fifty thousand of exposure. Nothing about the money changed.",
+      "audio": "demo-audio/s7d.mp3",
+      "seconds": 7.22
+    },
+    {
+      "id": "s8a",
+      "section": "8 · Money moves",
+      "action": {
+        "type": "openRow",
+        "id": "INV-4101",
+        "close": "INV-4124"
+      },
+      "caption": "Five lakh, over our auto-execute threshold, so it needs a person. This is a real RazorpayX payout call.",
+      "audio": "demo-audio/s8a.mp3",
+      "seconds": 9.74
+    },
+    {
+      "id": "s8b",
+      "section": "8 · Money moves",
+      "action": {
+        "type": "click",
+        "selector": "[data-pay=\"INV-4101\"]"
+      },
+      "hold": 0.8,
+      "caption": "Watch this. The row hasn't closed. It's asking me to confirm.",
+      "audio": "demo-audio/s8b.mp3",
+      "seconds": 6.46
+    },
+    {
+      "id": "s8c",
+      "section": "8 · Money moves",
+      "caption": "That's deliberate. A payout being requested isn't a compliance item being closed. It closes when RazorpayX confirms the money moved.",
+      "audio": "demo-audio/s8c.mp3",
+      "seconds": 11.23
+    },
+    {
+      "id": "s8d",
+      "section": "8 · Money moves",
+      "action": {
+        "type": "click",
+        "selector": "[data-confirm=\"INV-4101\"]"
+      },
+      "caption": "Now it's closed. Under ten thousand goes automatically. Above it, always a human.",
+      "audio": "demo-audio/s8d.mp3",
+      "seconds": 8.21
+    },
+    {
+      "id": "s9a",
+      "section": "9 · Does the AI earn its place?",
+      "action": {
+        "type": "slide",
+        "id": "ablation"
+      },
+      "caption": "This is the question I'd ask if I were sitting where you are.",
+      "audio": "demo-audio/s9a.mp3",
+      "seconds": 4.82
+    },
+    {
+      "id": "s9b",
+      "section": "9 · Does the AI earn its place?",
+      "caption": "Same pipeline twice. Once with the agents, once with string matching and no model. Same data, same scoring, both against answers we know are right.",
+      "audio": "demo-audio/s9b.mp3",
+      "seconds": 14.04
+    },
+    {
+      "id": "s9c",
+      "section": "9 · Does the AI earn its place?",
+      "caption": "String matching gets twenty of twenty-four suppliers. The agent gets twenty-four. On last year's ledger the simple version misreads fifty-nine invoices — over a crore. The agent misreads eight.",
+      "audio": "demo-audio/s9c.mp3",
+      "seconds": 16.42
+    },
+    {
+      "id": "s9d",
+      "section": "9 · Does the AI earn its place?",
+      "caption": "And the three it wrongly calls covered? Forty-five lakh you would have rushed for nothing.",
+      "audio": "demo-audio/s9d.mp3",
+      "seconds": 7.03
+    },
+    {
+      "id": "s9e",
+      "section": "9 · Does the AI earn its place?",
+      "hold": 0.6,
+      "caption": "Identical access to the registry. The difference is judgement, not data.",
+      "audio": "demo-audio/s9e.mp3",
+      "seconds": 6.31
+    },
+    {
+      "id": "s10",
+      "section": "10 · Close",
+      "action": {
+        "type": "slide",
+        "id": "close"
+      },
+      "hold": 2.5,
+      "caption": "Everyone counts forty-five days from the invoice date. That's the wrong date — and we can show you exactly what it costs.",
+      "audio": "demo-audio/s10.mp3",
+      "seconds": 9.67
+    }
   ]
 }
