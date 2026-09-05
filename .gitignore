@@ -11,3 +11,6 @@ demo-state.backup.json
 # Kept locally, out of the repo (working notes / spec)
 LEDGR.md
 PROVENANCE.md
+
+# Generated narration for the ?demo=1 autopilot (npm run demo:voice)
+public/demo-audio/

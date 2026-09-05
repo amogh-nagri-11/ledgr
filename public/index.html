@@ -100,5 +100,18 @@
 </footer>
 
 <script src="app.js"></script>
+
+<!-- ?demo=1 loads the recording autopilot. Nothing here runs in normal use. -->
+<script>
+  if (new URLSearchParams(location.search).get('demo') === '1') {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'demo.css';
+    document.head.appendChild(css);
+    const js = document.createElement('script');
+    js.src = 'demo.js';
+    document.body.appendChild(js);
+  }
+</script>
 </body>
 </html>

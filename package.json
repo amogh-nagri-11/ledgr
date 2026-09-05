@@ -11,7 +11,8 @@
     "corpus": "node scripts/corpus-report.mjs",
     "ablation": "node scripts/ablation.mjs",
     "tokens": "node scripts/token-profile.mjs",
-    "complete": "node scripts/complete-run.mjs"
+    "complete": "node scripts/complete-run.mjs",
+    "demo:voice": "node scripts/demo-voice.mjs"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

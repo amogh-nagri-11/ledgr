@@ -1,0 +1,139 @@
+/* ?demo=1 overlay: slides, caption bar, transport. Loaded only in demo mode,
+   so nothing here can affect the normal application. */
+
+#dmo { position: relative; z-index: 40; }
+
+/* ------------------------------------------------------------------ slides */
+
+#dmo-slide {
+  position: fixed; inset: 0; z-index: 50;
+  background: #0d1117;
+  color: #e6edf3;
+  display: flex; align-items: center; justify-content: center;
+  padding: 6vh 8vw 22vh;
+  animation: dmo-fade .35s ease;
+}
+#dmo-slide[hidden] { display: none; }
+
+@keyframes dmo-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.dmo-slide-inner { max-width: 1000px; width: 100%; }
+
+.dmo-kicker {
+  font-size: 15px; letter-spacing: .14em; text-transform: uppercase;
+  color: #7d8590; margin-bottom: 18px;
+}
+#dmo-slide h2 {
+  font-size: clamp(30px, 4.4vw, 54px); line-height: 1.14;
+  margin: 0 0 30px; font-weight: 650; letter-spacing: -.02em;
+}
+.dmo-body { font-size: clamp(17px, 1.6vw, 22px); line-height: 1.62; color: #c9d1d9; }
+.dmo-body ul, .dmo-body ol { margin: 0 0 22px; padding-left: 1.2em; }
+.dmo-body li { margin-bottom: 10px; }
+.dmo-body b { color: #fff; }
+.dmo-body .big {
+  margin-top: 26px; padding-top: 22px; border-top: 1px solid #30363d;
+  font-size: clamp(19px, 2vw, 27px); color: #e6edf3;
+}
+
+/* three phases */
+.dmo-body ol.phases { list-style: none; padding: 0; counter-reset: p; }
+.dmo-body ol.phases li {
+  counter-increment: p; position: relative; padding-left: 62px; margin-bottom: 24px;
+}
+.dmo-body ol.phases li::before {
+  content: counter(p); position: absolute; left: 0; top: -2px;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: #1f6feb; color: #fff; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.dmo-body ol.phases span { display: block; color: #8b949e; font-size: .82em; margin-top: 3px; }
+
+/* agents | rules */
+.dmo-body .split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.dmo-body .col { border: 1px solid #30363d; border-radius: 12px; padding: 22px 24px; }
+.dmo-body .col h4 {
+  margin: 0 0 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .82em; color: #7d8590; font-weight: 600;
+}
+.dmo-body .col p { margin: 0 0 10px; font-size: .84em; }
+.dmo-body .col.agents { background: #161b22; }
+.dmo-body .col.rules { background: #12261a; border-color: #2ea04326; }
+.dmo-body .neg { color: #f85149; margin-top: 16px !important; }
+.dmo-body .pos { color: #3fb950; margin-top: 16px !important; font-weight: 600; }
+
+/* ablation */
+.dmo-body table.abl { width: 100%; border-collapse: collapse; font-size: .82em; }
+.dmo-body table.abl th, .dmo-body table.abl td {
+  text-align: left; padding: 13px 14px; border-bottom: 1px solid #21262d;
+}
+.dmo-body table.abl thead th { color: #7d8590; font-weight: 600; font-size: .88em; }
+.dmo-body table.abl td.win { color: #3fb950; font-weight: 700; }
+.dmo-body .foot { margin-top: 20px; color: #7d8590; font-size: .76em; }
+
+/* ----------------------------------------------------------------- caption */
+
+#dmo-caption {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  background: linear-gradient(to top, rgba(9,12,16,.97) 62%, rgba(9,12,16,0));
+  color: #fff; padding: 46px 7vw 34px; pointer-events: none;
+}
+#dmo-caption[hidden] { display: none; }
+#dmo-section {
+  display: block; font-size: 12.5px; letter-spacing: .13em; text-transform: uppercase;
+  color: #58a6ff; margin-bottom: 9px;
+}
+#dmo-text {
+  margin: 0; font-size: clamp(19px, 2.15vw, 30px); line-height: 1.42;
+  font-weight: 500; max-width: 1180px; text-wrap: balance;
+}
+#dmo-caption.quote #dmo-text {
+  font-style: italic; border-left: 3px solid #58a6ff; padding-left: 22px; color: #dfe7ef;
+}
+
+/* --------------------------------------------------------------- transport */
+
+#dmo-bar {
+  position: fixed; top: 12px; right: 12px; z-index: 70;
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(13,17,23,.93); border: 1px solid #30363d; border-radius: 10px;
+  padding: 7px 10px; font-size: 12.5px; color: #c9d1d9;
+  transition: opacity .45s ease;
+}
+#dmo-bar.idle { opacity: 0; }
+#dmo-bar:hover { opacity: 1 !important; }
+#dmo-bar button {
+  background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+  border-radius: 6px; padding: 4px 11px; font-size: 12.5px; cursor: pointer;
+}
+#dmo-bar button:hover { background: #30363d; }
+#dmo-pos { min-width: 58px; text-align: center; color: #7d8590; font-variant-numeric: tabular-nums; }
+#dmo-mode { color: #7d8590; padding-left: 6px; border-left: 1px solid #30363d; }
+
+#dmo.bare #dmo-bar { display: none; }
+
+/* ------------------------------------------------------------ click marker */
+
+.dmo-ripple {
+  position: fixed; z-index: 65; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border: 2px solid #58a6ff; border-radius: 50%; pointer-events: none;
+  animation: dmo-ripple .8s ease-out forwards;
+}
+@keyframes dmo-ripple {
+  from { transform: scale(.4); opacity: 1; }
+  to   { transform: scale(3.4); opacity: 0; }
+}
+
+.dmo-pulse {
+  animation: dmo-pulse 2.6s ease-in-out;
+  border-radius: 10px;
+}
+@keyframes dmo-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88,166,255,0); }
+  18%      { box-shadow: 0 0 0 6px rgba(88,166,255,.30); }
+  60%      { box-shadow: 0 0 0 6px rgba(88,166,255,.30); }
+}
+
+/* The caption bar covers the bottom of the page, so give the app room to
+   scroll clear of it -- otherwise the last row is never fully visible. */
+body { padding-bottom: 210px; }
