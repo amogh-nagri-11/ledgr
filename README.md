@@ -99,6 +99,20 @@ The buffer, the red/amber windows, the tax rate and the auto-execute threshold a
 
 Ledgr recommends a pay-by date; it does not decide to wait. Nothing above the threshold moves without a click.
 
+## The corpus and the ablation
+
+`src/corpus/` is the test corpus the agent reasons over: 24 vendors, a 26-entry Udyam registry with NIC activity codes, 19 contract documents, 55 raw acceptance documents, 25 live payables and 185 historical invoices for FY 2025-26. Fully synthetic and fully labelled — see [`PROVENANCE.md`](./PROVENANCE.md).
+
+```
+npm run corpus
+```
+
+That prints what the corpus contains, what each designed case is built to defeat, and then scores a **non-AI baseline** — string matching and regex, no model — against ground truth. That is the floor the agent has to beat, and the reason the corpus is synthetic: accuracy claims need a correct answer to score against, and real vendor data does not come labelled.
+
+The report also names the designed cases the naive arm *survives*, so cases that fail to discriminate are visible rather than hidden.
+
+Acceptance evidence is deliberately untyped. The previous corpus tagged events `objection_raised`, which handed the model its answer — a regex reproduced the agent's deadlines exactly. Documents now carry only a medium (email, scan, system note); what a document *means* has to be read out of its body.
+
 ## Tests
 
 ```
