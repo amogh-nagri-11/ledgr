@@ -84,9 +84,9 @@ async function withStub(script, fn) {
 // ------------------------------------------------------------ portfolio agent
 
 test('the portfolio agent investigates, then submits a vendor finding', async () => {
+  // get_vendor_record is prefetched now, so the stub does not request it.
   const script = [
     { role: 'assistant', content: null, tool_calls: [
-      toolCall('c1', 'get_vendor_record', { vendor_id: 'V001' }),
       toolCall('c2', 'get_udyam_registration', { udyam: 'UDYAM-MH-26-0041872', as_of: '2026-09-05' }),
     ] },
     { role: 'assistant', content: null, tool_calls: [toolCall('c3', 'get_supply_history', { vendor_id: 'V001' })] },
@@ -103,13 +103,17 @@ test('the portfolio agent investigates, then submits a vendor finding', async ()
     assert.equal(f.enterpriseClass, 'micro');
     assert.equal(f.registeredActivity, 'manufacturing');
     assert.equal(f.identityConfidence, 0.93);
+
+    // The prefetched call still appears in the trail, so the investigation
+    // record is complete regardless of how the data was obtained.
     assert.deepEqual(f.trace.map((t) => t.tool),
       ['get_vendor_record', 'get_udyam_registration', 'get_supply_history', 'submit_vendor_finding']);
+    assert.match(f.trace[0].summary, /supplied up front/);
 
-    // Real tool output went back to the model, keyed by tool_call_id.
-    const toolMsg = stub.seen[1].messages.find((m) => m.role === 'tool' && m.name === 'get_vendor_record');
-    assert.equal(toolMsg.tool_call_id, 'c1');
-    assert.match(toolMsg.content, /Sharma Ent\./);
+    // And the prefetched content actually reached the model, in turn one.
+    const opening = stub.seen[0].messages.find((m) => m.role === 'user');
+    assert.match(opening.content, /Sharma Ent\./);
+    assert.match(opening.content, /Do not request it again/);
   });
 });
 

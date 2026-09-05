@@ -221,13 +221,26 @@ app.post('/api/analyze', async (req, res) => {
   }
 });
 
+/**
+ * The readable rationale. Cached against the finding that produced it.
+ *
+ * Without the cache this regenerated on every row open -- roughly 1,000 tokens
+ * a time, competing with the agents for the same daily budget. Browsing the
+ * queue was quietly spending the quota that produces findings.
+ */
 app.get('/api/invoices/:id/recommendation', async (req, res) => {
   const invoice = store.getInvoice(req.params.id);
   if (!invoice) return res.status(404).json({ error: 'No such invoice' });
-  if (!store.getInvoiceFinding(invoice.id)) return res.status(409).json({ error: 'Run analysis first' });
+  const finding = store.getInvoiceFinding(invoice.id);
+  if (!finding) return res.status(409).json({ error: 'Run analysis first' });
+
+  const cached = store.getRecommendation(invoice.id, finding.resolvedAt);
+  if (cached && !req.query.refresh) return res.json({ recommendation: cached, cached: true });
+
   try {
     const a = await assessInvoice(invoice, { refresh: false });
     const full = await withExplanation(a);
+    store.setRecommendation(invoice.id, finding.resolvedAt, full.recommendation);
     res.json({ recommendation: full.recommendation });
   } catch (err) {
     res.status(500).json({ error: err.message });

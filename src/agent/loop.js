@@ -47,13 +47,45 @@ export const TOOL_DEFS = {
  * @param {string} p.submitName    its name
  * @returns {Promise<{submitted: object, trace: Array, model: string}>}
  */
-export async function investigate({ system, prompt, toolNames, submitTool, submitName }) {
+export async function investigate({ system, prompt, toolNames, submitTool, submitName, prefetch = [] }) {
   const provider = activeProvider();
   const trace = [];
   const tools = [...toolNames.map((n) => TOOL_DEFS[n]), submitTool];
+
+  // Anything the agent calls on every single run is not a decision, it is a
+  // fixed cost. Each round trip resends the system prompt and every tool
+  // definition, so a tool that is always called is cheaper delivered up front
+  // than fetched -- and it removes a turn rather than just shortening one.
+  //
+  // Measured on this corpus: the invoice agent used the same two tools in the
+  // same order on 18 of 19 runs. The portfolio agent produced nine distinct
+  // sequences, so only its first, universal call is prefetched and the rest of
+  // its loop is left alone.
+  let preamble = '';
+  for (const { tool, args } of prefetch) {
+    if (!TOOL_IMPLS[tool]) continue;
+    try {
+      const result = TOOL_IMPLS[tool](args);
+      trace.push({ tool, input: args, summary: `${summarise(tool, args, result)} [supplied up front]` });
+      preamble += `
+
+--- ${tool} ---
+${JSON.stringify(result)}`;
+    } catch (err) {
+      trace.push({ tool, input: args, summary: `prefetch failed: ${err.message}` });
+    }
+  }
+
   const messages = [
     { role: 'system', content: system },
-    { role: 'user', content: prompt },
+    {
+      role: 'user',
+      content: preamble
+        ? `${prompt}
+
+You have already been given the following. Do not request it again.${preamble}`
+        : prompt,
+    },
   ];
 
   let submitted = null;

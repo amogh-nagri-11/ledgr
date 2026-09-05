@@ -29,6 +29,7 @@ function freshState() {
     payouts: JSON.parse(JSON.stringify(corpus.payouts)),
     extraInvoices: [],     // added through manual intake
     extraDocuments: {},    // invoiceId -> acceptance documents captured at intake
+    recommendations: {},   // invoiceId -> { forFinding, recommendation }
     audit: [],
   };
 }
@@ -45,6 +46,7 @@ export function load() {
       state.payouts = { ...state.payouts, ...(disk.payouts || {}) };
       state.extraInvoices = disk.extraInvoices || [];
       state.extraDocuments = disk.extraDocuments || {};
+      state.recommendations = disk.recommendations || {};
       state.audit = disk.audit || [];
     }
   } catch (err) {
@@ -112,6 +114,21 @@ export function addAcceptanceDocuments(invoiceId, docs) {
 }
 
 export const getExtraDocuments = (invoiceId) => state.extraDocuments[invoiceId] || [];
+
+/**
+ * Recommendations are keyed by the finding that produced them, so a re-analysed
+ * invoice regenerates its prose and an unchanged one never pays for it twice.
+ */
+export function getRecommendation(invoiceId, forFinding) {
+  const row = state.recommendations[invoiceId];
+  return row && row.forFinding === forFinding ? row.recommendation : null;
+}
+
+export function setRecommendation(invoiceId, forFinding, recommendation) {
+  state.recommendations[invoiceId] = { forFinding, recommendation };
+  persist();
+  return recommendation;
+}
 
 // ------------------------------------------------------------ agent findings
 

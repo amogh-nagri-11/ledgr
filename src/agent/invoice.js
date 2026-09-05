@@ -88,6 +88,13 @@ Description: ${invoice.description}
 
 Investigate, then call submit_invoice_finding.`,
       toolNames: ['get_vendor_documents', 'get_acceptance_documents', 'get_payout_status'],
+      // Measured: the same two tools on 18 of 19 runs. Supplying them removes
+      // two round trips, and each round trip resent the system prompt and every
+      // tool definition. The tools stay declared so it can still re-read.
+      prefetch: [
+        { tool: 'get_vendor_documents', args: { vendor_id: vendor.id } },
+        { tool: 'get_acceptance_documents', args: { invoice_id: invoice.id } },
+      ],
       submitTool: SUBMIT,
       submitName: 'submit_invoice_finding',
     });

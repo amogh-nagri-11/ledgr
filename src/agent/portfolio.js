@@ -85,6 +85,10 @@ Report category and registration status as at ${asOf}.
 
 Investigate, then call submit_vendor_finding.`,
       toolNames: ['get_vendor_record', 'get_udyam_registration', 'search_udyam_registry', 'get_supply_history'],
+      // This agent genuinely branches -- nine distinct tool sequences across
+      // 24 vendors -- so only the call it opens with every single time is
+      // supplied up front. The rest of the loop is left to it.
+      prefetch: [{ tool: 'get_vendor_record', args: { vendor_id: vendor.id } }],
       submitTool: SUBMIT,
       submitName: 'submit_vendor_finding',
     });
