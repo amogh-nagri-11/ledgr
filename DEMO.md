@@ -1,22 +1,29 @@
 # Ledgr — full 5-minute script
 
-Problem → architecture → live demo → the number. One continuous performance.
+Problem → solution → architecture → live demo → the number. One continuous
+performance.
 
 **Plain text is what you say. [Bold in brackets] is what you do.**
 
-> **The time maths, measured not guessed.** Core speech is 642 words. At a calm
-> 135 words a minute that's 4:45, and clicking, rendering and the one deliberate
-> pause put it around **5:17 delivered.** So it is slightly over, on purpose —
-> tighten by talking a little faster, not by adding.
+> **The time maths, measured not guessed.** Core speech is 675 words. At a calm
+> 135 words a minute that's 5:00 of pure talking, and clicking, rendering and the
+> one deliberate pause put it around **5:32 delivered.** That is over, so the
+> script below is written to be cut, not recited whole.
 >
-> **Section 7 is on top of that** (~55s all in). Only if you're ahead at 3:00.
+> **Cut 1 by default: don't switch to tab 3 in section 5.** Say the number over
+> the queue instead — *"and it reconstructs last year: twenty-nine lakh of
+> exposure, ninety-three lakh correctly excluded"* — and you land at **~5:07.**
+> That is the version to rehearse.
 >
-> **If you overrun, cut in this order:**
+> **Section 7 is on top of everything** (~55s all in). Only if you're ahead at
+> 3:10.
+>
+> **If you're still long on the day, keep cutting in this order:**
 > 1. Section 7 entirely.
-> 2. Section 5 — don't switch tabs. Say it over the queue instead: *"and it
->    reconstructs last year — twenty-nine lakh of exposure, ninety-three lakh
->    correctly excluded."* Saves ~25 seconds.
-> 3. In section 3, drop everything after "there's a test asserting it."
+> 2. In section 3, drop everything after "there's a test asserting it."
+> 3. In section 2, drop the middle paragraph — keep the opening line and the
+>    "judgement, not arithmetic" close. Saves ~20 seconds and the handover into
+>    the architecture survives.
 
 Numbers are from the live app today — **re-check them on the day**, invoice dates
 move with the calendar.
@@ -45,19 +52,27 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 2 · What we built — 0:25 to 0:45
+## 2 · The solution — 0:25 to 0:55
 
-**[Slide: one line, or the three phases]**
+**[Slide: the three phases]**
 
-> So Ledgr does three things. It works out which suppliers the law reaches. It
-> works out the real deadline on every unpaid bill and flags the ones about to
-> breach. And it pays them through RazorpayX before that happens.
+> So we built Ledgr. Three things, sitting on top of your unpaid bills.
 >
-> Then it looks backwards and tells you what last year already cost.
+> It works out which of your suppliers the law actually reaches. Then on every
+> bill it works out the real deadline, flags what's about to breach, and pays
+> through RazorpayX before it does. And it looks backwards — what last year
+> already cost you.
+>
+> **[beat]** The two hard parts there are judgement, not arithmetic. Which
+> supplier. And which date. That's where the AI is — and it's the only place it
+> is.
+
+*That last line is the handover into the architecture. Say it, then change the
+slide — don't pause and let it land, section 3 is the landing.*
 
 ---
 
-## 3 · The one design decision — 0:45 to 1:10
+## 3 · The one design decision — 0:55 to 1:20
 
 **[Slide: two columns — "agents report evidence" | "rules decide"]**
 
@@ -77,7 +92,7 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 4 · Who does the law reach? — 1:10 to 1:50
+## 4 · Who does the law reach? — 1:20 to 2:00
 
 **[Vendor portfolio tab, already open]**
 
@@ -97,9 +112,10 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 5 · What it's already cost — 1:50 to 2:10
+## 5 · What it's already cost — 2:00 to 2:20
 
-**[Tab 3 → Reconstruct last year → let it render]**
+**[Tab 3 → Reconstruct last year → let it render]** — *default cut: stay on the
+queue and just say the numbers. See the top of this file.*
 
 > That's today. This is last year — a hundred and eighty-five invoices.
 >
@@ -110,7 +126,7 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 6 · The row we built this for — 2:10 to 3:00
+## 6 · The row we built this for — 2:20 to 3:10
 
 **[Tab 1 → open INV-4124, Sharma Ent., ₹2,36,000]**
 
@@ -137,7 +153,7 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 7 · Proving it isn't staged — *only if ahead at 3:00*
+## 7 · Proving it isn't staged — *only if ahead at 3:10*
 
 **[+ New invoice → Orion Steel Traders, 200000, both dates today,
 "TMT bars, bought in and resold" → Add and analyse]**
@@ -153,7 +169,7 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 8 · Money moves, and the loop closes — 3:00 to 3:35
+## 8 · Money moves, and the loop closes — 3:10 to 3:45
 
 **[Find INV-4101, Sharma Ent., ₹5,00,000 → Pay now]**
 
@@ -171,7 +187,7 @@ Terminal in a second window. Slide up.
 
 ---
 
-## 9 · Does the AI earn its place? — 3:35 to 4:20
+## 9 · Does the AI earn its place? — 3:45 to 4:30
 
 **[Switch to terminal]**
 
@@ -195,7 +211,7 @@ npm run ablation
 
 ---
 
-## 10 · Close — 4:20 to 4:30
+## 10 · Close — 4:30 to 4:40
 
 > Everyone counts forty-five days from the invoice date. That's the wrong date —
 > and we can show you exactly what it costs.
