@@ -17,3 +17,5 @@ public/demo-audio/
 
 # Slide deck, kept locally (re-exports would bloat history)
 *.pptx
+
+DEMO.md
