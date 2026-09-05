@@ -60,20 +60,48 @@ export const PROVIDERS = {
 
 const AUTO_ORDER = ['gemini', 'groq', 'openrouter', 'openai'];
 
-/** Which provider is configured right now, or null if none. */
-export function activeProvider() {
-  const forced = process.env.LLM_PROVIDER;
-  if (forced) {
-    const p = PROVIDERS[forced.toLowerCase()];
-    if (!p) return null;
-    if (p.keyEnv && !process.env[p.keyEnv]) return null;
-    return build(forced.toLowerCase(), p);
-  }
-  for (const name of AUTO_ORDER) {
+/**
+ * Every provider that has credentials, in the order they should be tried.
+ *
+ * LLM_PROVIDER names the PREFERRED provider, not the only one -- the rest of
+ * the chain follows it. Free tiers meter per day, so a single provider will
+ * hit a wall that no amount of waiting clears within a session; having a
+ * second budget behind it is the difference between a run that finishes and
+ * one that drops to the heuristic arm halfway.
+ *
+ * Set LLM_FALLBACK=false to pin one provider and fail rather than move on.
+ */
+export function providerChain() {
+  const chain = [];
+  const seen = new Set();
+  const add = (name) => {
     const p = PROVIDERS[name];
-    if (process.env[p.keyEnv]) return build(name, p);
+    if (!p || seen.has(name)) return;
+    // A key-less provider (Ollama) only joins the chain if asked for by name.
+    if (p.keyEnv && !process.env[p.keyEnv]) return;
+    seen.add(name);
+    chain.push(build(name, p));
+  };
+
+  const preferred = String(process.env.LLM_PROVIDER || '').toLowerCase();
+  if (preferred) {
+    const p = PROVIDERS[preferred];
+    if (p && (!p.keyEnv || process.env[p.keyEnv])) {
+      seen.add(preferred);
+      chain.push(build(preferred, p));
+    }
+    if (String(process.env.LLM_FALLBACK || '').toLowerCase() === 'false') return chain;
   }
-  return null;
+
+  for (const name of AUTO_ORDER) add(name);
+  return chain;
+}
+
+/** The provider that would serve the next call: first in the chain with budget. */
+export function activeProvider() {
+  const chain = providerChain();
+  if (!chain.length) return null;
+  return chain.find((p) => !breakerTripped(p.name)) || chain[0];
 }
 
 function build(name, p) {
@@ -82,7 +110,9 @@ function build(name, p) {
     label: p.label,
     baseUrl: process.env.LLM_BASE_URL || p.baseUrl,
     apiKey: p.keyEnv ? process.env[p.keyEnv] : 'not-needed',
-    model: process.env.LLM_MODEL || p.defaultModel,
+    model: (name === String(process.env.LLM_PROVIDER || '').toLowerCase() && process.env.LLM_MODEL)
+      ? process.env.LLM_MODEL
+      : p.defaultModel,
   };
 }
 
@@ -92,8 +122,12 @@ export function llmAvailable() {
 
 /** Human-readable mode string for the UI chip. */
 export function describeProvider() {
-  const p = activeProvider();
-  return p ? `${p.label} · ${p.model}` : null;
+  const chain = providerChain();
+  if (!chain.length) return null;
+  const active = activeProvider();
+  const rest = chain.filter((p) => p.name !== active.name);
+  return `${active.label} · ${active.model}`
+    + (rest.length ? ` (+${rest.length} fallback${rest.length > 1 ? 's' : ''})` : '');
 }
 
 /**
@@ -105,9 +139,39 @@ export function describeProvider() {
  * @param {number} [p.temperature]
  * @returns {Promise<object>} the assistant message
  */
-export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 }) {
-  const provider = activeProvider();
-  if (!provider) throw new Error('No LLM provider configured');
+/**
+ * One chat-completions call, trying each provider that still has budget.
+ *
+ * A per-day ceiling does not clear within a session, so when one provider is
+ * exhausted the only useful move is the next one. Falling through the chain
+ * here means a run finishes on a second free budget instead of dropping to the
+ * heuristic arm halfway -- which is exactly what happened before this existed.
+ */
+export async function chat(params) {
+  const chain = providerChain();
+  if (!chain.length) throw new Error('No LLM provider configured');
+
+  const errors = [];
+  for (const provider of chain) {
+    if (breakerTripped(provider.name)) {
+      errors.push(`${provider.label}: quota exhausted, skipped`);
+      continue;
+    }
+    try {
+      return await callProvider(provider, params);
+    } catch (err) {
+      errors.push(err.message);
+      // Only move on when this provider is out of budget or misconfigured.
+      // A genuine model error should surface, not silently re-run elsewhere.
+      if (!breakerTripped(provider.name) && !/is not available/i.test(err.message)) throw err;
+      const next = chain.find((p) => p !== provider && !breakerTripped(p.name));
+      if (next) console.warn(`[llm] ${provider.label} unavailable — falling through to ${next.label}.`);
+    }
+  }
+  throw new Error(errors.join(' | ') || 'All providers unavailable');
+}
+
+async function callProvider(provider, { messages, tools, maxTokens = 2000, temperature = 0 }) {
 
   const body = {
     model: provider.model,
@@ -124,10 +188,6 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
   // Without this, a 24-vendor sweep spends minutes retrying a daily cap that
   // cannot recover, and every vendor lands on the heuristic anyway -- just
   // several minutes later.
-  if (Date.now() < quotaExhaustedUntil) {
-    throw new Error(`${provider.label}: quota exhausted, skipping (retry after ${new Date(quotaExhaustedUntil).toISOString().slice(11, 19)}Z)`);
-  }
-
   // Free tiers hand out 429s and 503s freely, and an agentic loop makes a lot
   // of calls. Retry the transient ones rather than dropping the whole invoice
   // to the heuristic over one blip.
@@ -221,7 +281,7 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
           const cooldown = perDay || explicitQuota
             ? QUOTA_COOLDOWN_MS
             : Math.min(stated, QUOTA_COOLDOWN_MS);
-          quotaExhaustedUntil = Date.now() + cooldown;
+          tripBreaker(provider.name, cooldown);
           const why = perDay ? 'daily limit reached'
             : explicitQuota ? 'quota exhausted'
               : `provider asked for ${Math.round(stated / 1000)}s, longer than we will sleep`;
@@ -268,9 +328,18 @@ const REQUEST_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS) || 90000;
 const MAX_SLEEP_MS = Number(process.env.LLM_MAX_SLEEP_MS) || 60000;
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 
-/** Circuit breaker for quota ceilings, which retrying cannot fix. */
+/**
+ * Circuit breaker for quota ceilings, which retrying cannot fix.
+ * Tracked PER PROVIDER so exhausting one does not disable the others.
+ */
 const QUOTA_COOLDOWN_MS = 10 * 60 * 1000;
-let quotaExhaustedUntil = 0;
+const exhaustedUntil = new Map();
+
+const breakerTripped = (name) => Date.now() < (exhaustedUntil.get(name) || 0);
+
+function tripBreaker(name, ms) {
+  exhaustedUntil.set(name, Date.now() + ms);
+}
 
 /** Set when the configured model id is rejected by the provider. */
 let modelUnavailable = null;
@@ -309,17 +378,26 @@ export async function listModels(provider = activeProvider()) {
  * the provider will not serve.
  */
 export function quotaState() {
-  const tripped = Date.now() < quotaExhaustedUntil;
+  const chain = providerChain();
+  const providers = chain.map((p) => ({
+    name: p.name,
+    label: p.label,
+    model: p.model,
+    tripped: breakerTripped(p.name),
+    until: breakerTripped(p.name) ? new Date(exhaustedUntil.get(p.name)).toISOString() : null,
+  }));
+  const usable = providers.filter((p) => !p.tripped);
   return {
-    tripped,
-    until: tripped ? new Date(quotaExhaustedUntil).toISOString() : null,
+    tripped: chain.length > 0 && usable.length === 0,
+    until: usable.length ? null : providers.map((p) => p.until).sort()[0] || null,
+    providers,
+    active: usable[0] ? `${usable[0].label} · ${usable[0].model}` : null,
     modelUnavailable,
   };
 }
 
-/** Clear the breaker — used when the user switches model or provider. */
 export function resetQuotaBreaker() {
-  quotaExhaustedUntil = 0;
+  exhaustedUntil.clear();
   modelUnavailable = null;
 }
 
