@@ -219,8 +219,9 @@ test('coverage is decided by the rule, and traders are excluded', () => {
   assert.equal(decideCoverage({ ...base, registeredActivity: 'trading', supplyNature: 'resale' }).result, RESULT.NOT_COVERED);
   // A trading registration is a prior, not a verdict.
   assert.equal(decideCoverage({ ...base, registeredActivity: 'trading', supplyNature: 'manufactured' }).result, RESULT.COVERED);
-  // A manufacturer passing goods through is not covered on that supply.
-  assert.equal(decideCoverage({ ...base, registeredActivity: 'manufacturing', supplyNature: 'resale' }).result, RESULT.NOT_COVERED);
+  // A manufacturer passing goods through is not covered on that supply -- but
+  // only when the resale is evidenced on THIS supply.
+  assert.equal(decideCoverage({ ...base, registeredActivity: 'manufacturing', supplyNature: 'resale', supplyEvidenced: true }).result, RESULT.NOT_COVERED);
   // Medium is out of scope; a lapsed registration attaches no obligation.
   assert.equal(decideCoverage({ ...base, enterpriseClass: 'medium', registeredActivity: 'manufacturing', supplyNature: 'manufactured' }).result, RESULT.NOT_COVERED);
   assert.equal(decideCoverage({ ...base, registrationActive: false, registeredActivity: 'manufacturing', supplyNature: 'manufactured' }).result, RESULT.NOT_COVERED);
@@ -241,4 +242,27 @@ test('unknown is escalated, never silently treated as not covered', () => {
   });
   assert.equal(shaky.result, RESULT.UNKNOWN, 'a shaky identity must not produce a coverage verdict');
   assert.equal(shaky.needsReview, true);
+});
+
+test('a vendor-level activity guess escalates rather than excluding', () => {
+  // Registered as a producer, but the supply history reads as resale, and no
+  // invoice-level evidence backs that up. Excluding here would silently drop a
+  // real deduction, so the rule must escalate instead.
+  const guess = decideCoverage({
+    registrationFound: true, enterpriseClass: 'micro', registrationActive: true,
+    registeredActivity: 'manufacturing', supplyNature: 'resale',
+    supplyEvidenced: false, identityConfidence: 0.95, confidenceFloor: 0.6,
+  });
+  assert.equal(guess.result, RESULT.UNKNOWN);
+  assert.equal(guess.reasonCode, 'activity_conflict');
+  assert.equal(guess.needsReview, true);
+
+  // The same conclusion, evidenced on this supply, does exclude.
+  const evidenced = decideCoverage({
+    registrationFound: true, enterpriseClass: 'micro', registrationActive: true,
+    registeredActivity: 'manufacturing', supplyNature: 'resale',
+    supplyEvidenced: true, identityConfidence: 0.95, confidenceFloor: 0.6,
+  });
+  assert.equal(evidenced.result, RESULT.NOT_COVERED);
+  assert.equal(evidenced.reasonCode, 'pass_through_supply');
 });

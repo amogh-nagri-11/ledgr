@@ -26,7 +26,7 @@ const ahead = (n) => addDays(T, n);
 // ---------------------------------------------------------------------------
 
 export const liveInvoices = [
-  { id: 'INV-4101', vendorId: 'V001', amount: 500000, invoiceDate: ago(52), description: 'MS plate, 14 MT' },
+  { id: 'INV-4101', vendorId: 'V001', amount: 500000, invoiceDate: ago(52), description: 'MS plate, 14 MT, profile-cut and drilled to drawing SP-220' },
   { id: 'INV-4102', vendorId: 'V002', amount: 275000, invoiceDate: ago(48), description: 'Machined components, batch 22' },
   { id: 'INV-4103', vendorId: 'V003', amount:  64000, invoiceDate: ago(14), description: 'Corrugated cartons, 3000 nos' },
   { id: 'INV-4104', vendorId: 'V004', amount: 185000, invoiceDate: ago(44), description: 'Freight, Ahmedabad lane' },
@@ -49,7 +49,7 @@ export const liveInvoices = [
   { id: 'INV-4121', vendorId: 'V022', amount: 355000, invoiceDate: ago(41), description: 'Grey iron castings, 60 nos' },
   { id: 'INV-4122', vendorId: 'V023', amount:  67000, invoiceDate: ago(15), description: 'Fabricated clamps, 900 nos' },
   { id: 'INV-4123', vendorId: 'V024', amount: 412000, invoiceDate: ago(12), description: 'BOPP film, 40 reels, supplied as received from the overseas mill' },
-  { id: 'INV-4124', vendorId: 'V001', amount: 236000, invoiceDate: ago(37), description: 'MS angle sections, 6 MT' },
+  { id: 'INV-4124', vendorId: 'V001', amount: 236000, invoiceDate: ago(37), description: 'MS angle sections, 6 MT, cut and mitred to schedule' },
   { id: 'INV-4125', vendorId: 'V021', amount:   8400, invoiceDate: ago(11), description: 'Assorted fasteners and fixings' },
 ].map((i) => ({ ...i, currency: 'INR', period: 'live' }));
 
@@ -88,7 +88,7 @@ const FY_END = '2026-03-31';
  * "classify by today's status" audit goes wrong at scale.
  */
 const HISTORICAL_PROFILE = [
-  { vendorId: 'V001', count: 14, min:  80000, max: 520000, what: 'MS plate and sections' },
+  { vendorId: 'V001', count: 14, min:  80000, max: 520000, what: 'MS plate and sections, cut and drilled to drawing' },
   { vendorId: 'V002', count: 11, min: 120000, max: 380000, what: 'machined components' },
   { vendorId: 'V003', count:  9, min:  22000, max:  95000, what: 'corrugated packaging' },
   { vendorId: 'V004', count: 12, min:  45000, max: 210000, what: 'road freight' },

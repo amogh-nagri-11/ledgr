@@ -12,11 +12,17 @@ export const PROVIDERS = {
     label: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyEnv: 'GEMINI_API_KEY',
-    // Older ids (gemini-2.5-flash) 404 for accounts created after they were
+    // A "lite" model by default, and deliberately. The free tier meters the
+    // full flash models at ~20 requests per DAY, which one portfolio sweep
+    // exhausts before it finishes; the lite tiers are far more generous and
+    // this workload is extraction, not deep reasoning. Override with LLM_MODEL
+    // (gemini-3.6-flash and gemini-3.8-flash are stronger and much scarcer).
+    //
+    // Older ids (gemini-2.5-*) 404 for accounts created after they were
     // retired. List what your key can actually see with:
     //   curl -H "Authorization: Bearer $GEMINI_API_KEY" \
     //     https://generativelanguage.googleapis.com/v1beta/openai/models
-    defaultModel: 'gemini-3.6-flash',
+    defaultModel: 'gemini-3.5-flash-lite',
     note: 'Free tier, no card required — aistudio.google.com/apikey',
   },
   groq: {
@@ -111,6 +117,14 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
     body.tool_choice = 'auto';
   }
 
+  // If the provider has already told us the quota is gone, fail immediately.
+  // Without this, a 24-vendor sweep spends minutes retrying a daily cap that
+  // cannot recover, and every vendor lands on the heuristic anyway -- just
+  // several minutes later.
+  if (Date.now() < quotaExhaustedUntil) {
+    throw new Error(`${provider.label}: quota exhausted, skipping (retry after ${new Date(quotaExhaustedUntil).toISOString().slice(11, 19)}Z)`);
+  }
+
   // Free tiers hand out 429s and 503s freely, and an agentic loop makes a lot
   // of calls. Retry the transient ones rather than dropping the whole invoice
   // to the heuristic over one blip.
@@ -147,6 +161,15 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
     if (!res.ok) {
       const msg = errorBody?.message || json?.message || `HTTP ${res.status}`;
       lastError = new Error(`${provider.label}: ${msg}`);
+
+      // A quota ceiling is not a transient blip. Trip the breaker so the rest
+      // of the batch stops immediately instead of retrying it 24 more times.
+      if (res.status === 429 && /quota|exceeded your current/i.test(msg)) {
+        quotaExhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS;
+        console.warn(`[llm] ${provider.label} quota exhausted — falling back to the heuristic arm for the next ${QUOTA_COOLDOWN_MS / 60000} minutes.`);
+        throw lastError;
+      }
+
       if (RETRYABLE.has(res.status) && attempt < MAX_RETRIES) {
         await sleep(retryDelayMs(res, errorBody, attempt));
         continue;
@@ -164,6 +187,21 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
 
 const MAX_RETRIES = 3;
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
+
+/** Circuit breaker for quota ceilings, which retrying cannot fix. */
+const QUOTA_COOLDOWN_MS = 10 * 60 * 1000;
+let quotaExhaustedUntil = 0;
+
+/** Is the AI arm currently usable, or has the quota breaker tripped? */
+export function quotaState() {
+  const tripped = Date.now() < quotaExhaustedUntil;
+  return { tripped, until: tripped ? new Date(quotaExhaustedUntil).toISOString() : null };
+}
+
+/** Clear the breaker — used when the user switches model or provider. */
+export function resetQuotaBreaker() {
+  quotaExhaustedUntil = 0;
+}
 
 const backoffMs = (attempt) => Math.round((2 ** attempt) * 1000 * (0.75 + Math.random() * 0.5));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

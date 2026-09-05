@@ -9,7 +9,7 @@ import {
   portfolioSummary, sweepPortfolio, sweepVendor, coverageFor,
 } from './assess.js';
 import { runRetroAudit } from './audit/retro.js';
-import { llmAvailable, describeProvider } from './agent/llm.js';
+import { llmAvailable, describeProvider, quotaState } from './agent/llm.js';
 import { createPayout, fetchPayoutStatus, mode as payoutMode } from './razorpayx.js';
 import { today, isValidISODate } from './engine/dates.js';
 import * as corpus from './corpus/index.js';
@@ -26,8 +26,8 @@ function envelope(assessments) {
   return {
     today: today(),
     config: store.getConfig(),
-    mode: { ai: llmAvailable(), provider: describeProvider(), payouts: payoutMode() },
-    sweep: { done: store.sweptCount(), total: store.getVendors().length, complete: store.sweepComplete() },
+    mode: { ai: llmAvailable(), provider: describeProvider(), payouts: payoutMode(), quota: quotaState() },
+    sweep: sweepStatus(),
     summary: portfolioSummary(assessments),
     assessments,
   };
@@ -41,6 +41,28 @@ app.get('/api/corpus', (req, res) => res.json({ stats: corpus.stats(), provenanc
 
 // -------------------------------------------------- phase 1: portfolio sweep
 
+let sweepJob = null;
+
+function sweepStatus() {
+  return {
+    done: store.sweptCount(),
+    total: store.getVendors().length,
+    complete: store.sweepComplete(),
+    running: Boolean(sweepJob && sweepJob.running),
+    current: sweepJob ? sweepJob.current : null,
+    mode: sweepJob ? sweepJob.mode : null,
+    startedAt: sweepJob ? sweepJob.startedAt : null,
+    fellBack: sweepJob ? sweepJob.fellBack : 0,
+    error: sweepJob ? sweepJob.error : null,
+  };
+}
+
+app.get('/api/sweep/status', (req, res) => res.json({ sweep: sweepStatus(), vendors: vendorRows() }));
+
+/**
+ * The sweep runs in the background and the client polls. A 24-vendor AI sweep
+ * is minutes of work; blocking an HTTP request on it makes the UI look hung.
+ */
 app.post('/api/sweep', async (req, res) => {
   const { refresh = false, forceHeuristic = false, vendorId } = req.body || {};
   try {
@@ -53,16 +75,48 @@ app.post('/api/sweep', async (req, res) => {
         detail: `${vendor.ledgerName} -> ${finding.registrationFound ? `${finding.registeredName} (${finding.registeredActivity}, ${finding.enterpriseClass})` : 'no registration resolved'}, confidence ${finding.identityConfidence}, via ${finding.mode}.`,
         trace: finding.trace,
       });
-      return res.json({ finding, vendors: vendorRows() });
+      return res.json({ finding, vendors: vendorRows(), sweep: sweepStatus() });
     }
 
-    const before = Date.now();
-    await sweepPortfolio({ refresh, forceHeuristic });
-    store.audit({
-      type: 'portfolio_sweep', actor: 'ledgr-portfolio-agent',
-      detail: `Swept ${store.sweptCount()} vendors in ${Math.round((Date.now() - before) / 1000)}s.`,
-    });
-    res.json({ vendors: vendorRows() });
+    if (sweepJob && sweepJob.running) {
+      return res.status(409).json({ error: 'A sweep is already running.', sweep: sweepStatus() });
+    }
+
+    sweepJob = {
+      running: true,
+      mode: forceHeuristic || !llmAvailable() ? 'heuristic' : 'ai',
+      startedAt: new Date().toISOString(),
+      current: null,
+      fellBack: 0,
+      error: null,
+    };
+
+    // Fire and forget; the client polls /api/sweep/status.
+    (async () => {
+      const started = Date.now();
+      try {
+        await sweepPortfolio({
+          refresh,
+          forceHeuristic,
+          onProgress: (done, total, vendorId2) => { sweepJob.current = vendorId2; },
+        });
+        sweepJob.fellBack = store.getVendors()
+          .filter((v) => (store.getVendorFinding(v.id) || {}).mode === 'heuristic_fallback').length;
+        store.audit({
+          type: 'portfolio_sweep', actor: 'ledgr-portfolio-agent',
+          detail: `Swept ${store.sweptCount()} vendors in ${Math.round((Date.now() - started) / 1000)}s (${sweepJob.mode})`
+            + (sweepJob.fellBack ? `; ${sweepJob.fellBack} fell back to the heuristic arm.` : '.'),
+        });
+      } catch (err) {
+        console.error(err);
+        sweepJob.error = err.message;
+      } finally {
+        sweepJob.running = false;
+        sweepJob.current = null;
+      }
+    })();
+
+    res.status(202).json({ started: true, sweep: sweepStatus() });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

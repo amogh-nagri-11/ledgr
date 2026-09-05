@@ -67,12 +67,18 @@ export function coverageFor(vendorId, asOfDate, supplyNature = 'unknown') {
   // this supply date from the registration it identified.
   const dated = datedStatus(finding, asOfDate);
 
+  // Did this come from the invoice agent reading THIS supply, or is it a
+  // vendor-level inference about what the firm generally does? The rule needs
+  // to know, because it will not exclude a covered vendor on a guess.
+  const supplyEvidenced = supplyNature !== 'unknown';
+
   return decideCoverage({
     registrationFound: finding.registrationFound,
     enterpriseClass: dated.enterpriseClass,
     registrationActive: dated.registrationActive,
     registeredActivity: finding.registeredActivity,
-    supplyNature: supplyNature === 'unknown' ? natureFromActivity(finding.actualActivity) : supplyNature,
+    supplyNature: supplyEvidenced ? supplyNature : natureFromActivity(finding.actualActivity),
+    supplyEvidenced,
     identityConfidence: finding.identityConfidence,
     confidenceFloor: config.identityConfidenceFloor,
   });

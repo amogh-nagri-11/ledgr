@@ -28,11 +28,15 @@ async function api(path, options) {
 
 function renderChrome() {
   if (!state) return;
-  $('modeAi').textContent = `AI: ${state.mode.provider || 'heuristic fallback'}`;
-  $('modeAi').classList.toggle('live', state.mode.ai);
+  const quotaTripped = state.mode.quota && state.mode.quota.tripped;
+  $('modeAi').textContent = quotaTripped
+    ? `AI: quota exhausted — heuristic arm`
+    : `AI: ${state.mode.provider || 'heuristic fallback'}`;
+  $('modeAi').classList.toggle('live', state.mode.ai && !quotaTripped);
+  $('modeAi').classList.toggle('warn', Boolean(quotaTripped));
   $('modePayout').textContent = `Payouts: RazorpayX ${state.mode.payouts}`;
   $('modePayout').classList.toggle('live', state.mode.payouts === 'sandbox');
-  $('modeSweep').textContent = `Sweep: ${state.sweep.done}/${state.sweep.total}`;
+  $('modeSweep').textContent = `Sweep: ${state.sweep.done}/${state.sweep.total}${state.sweep.running ? ' …' : ''}`;
   $('modeSweep').classList.toggle('live', state.sweep.complete);
   $('modeDate').textContent = `Today ${state.today}`;
 
@@ -469,23 +473,49 @@ async function pay(id, auto, btn) {
 
 document.querySelectorAll('.tab').forEach((el) => el.addEventListener('click', () => show(el.dataset.tab)));
 
-$('btnSweep').addEventListener('click', async () => {
-  const btn = $('btnSweep');
-  btn.disabled = true;
-  hint(state?.mode.ai
-    ? `Portfolio agent is validating registrations and classifying activity for ${state.sweep.total} vendors…`
-    : 'Running heuristic classification over the vendor master…', true);
+async function runSweep(forceHeuristic) {
+  const btns = [$('btnSweep'), $('btnSweepFast')];
+  btns.forEach((b) => { b.disabled = true; });
   try {
-    const out = await api('/api/sweep', { method: 'POST', body: JSON.stringify({ refresh: true }) });
-    vendorRows = out.vendors;
-    state = await api('/api/state');
+    await api('/api/sweep', { method: 'POST', body: JSON.stringify({ refresh: true, forceHeuristic }) });
     show('vendors');
-    const unknown = vendorRows.filter((r) => r.coverage && r.coverage.result === 'unknown').length;
-    const excluded = vendorRows.filter((r) => r.coverage && r.coverage.result === 'not_covered');
-    hint(`Swept ${vendorRows.length} vendors. ${excluded.length} out of scope (${inr(excluded.reduce((s, r) => s + r.totalValue, 0))} of payments), ${unknown} unresolved.`);
-  } catch (err) { hint(`Sweep failed: ${err.message}`); }
-  btn.disabled = false;
-});
+
+    // The sweep runs server-side; poll so the page never looks hung.
+    let last = -1;
+    for (;;) {
+      const out = await api('/api/sweep/status');
+      vendorRows = out.vendors;
+      if (out.sweep.done !== last) {
+        last = out.sweep.done;
+        renderSummary();
+        renderVendors();
+      }
+      if (state) { state.sweep = out.sweep; renderChrome(); }
+
+      if (!out.sweep.running) {
+        if (out.sweep.error) { hint(`Sweep failed: ${out.sweep.error}`); break; }
+        state = await api('/api/state');
+        renderChrome();
+        const unknown = vendorRows.filter((r) => r.coverage && r.coverage.result === 'unknown').length;
+        const excluded = vendorRows.filter((r) => r.coverage && r.coverage.result === 'not_covered');
+        const fell = out.sweep.fellBack;
+        hint(`Swept ${vendorRows.length} vendors. ${excluded.length} out of scope (${inr(excluded.reduce((s, r) => s + r.totalValue, 0))} of payments), ${unknown} unresolved.`
+          + (fell ? ` ${fell} fell back to the heuristic arm — the AI provider was unavailable or out of quota.` : ''));
+        break;
+      }
+
+      hint(`${out.sweep.mode === 'ai' ? 'Portfolio agent' : 'Heuristic classifier'} working — ${out.sweep.done}/${out.sweep.total} vendors`
+        + (out.sweep.current ? ` (on ${out.sweep.current})` : '') + '. Results appear as they land.', true);
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  } catch (err) {
+    hint(`Sweep failed: ${err.message}`);
+  }
+  btns.forEach((b) => { b.disabled = false; });
+}
+
+$('btnSweep').addEventListener('click', () => runSweep(false));
+$('btnSweepFast').addEventListener('click', () => runSweep(true));
 
 $('btnAnalyze').addEventListener('click', async () => {
   const btn = $('btnAnalyze');

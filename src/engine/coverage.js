@@ -82,8 +82,22 @@ export function decideCoverage(e) {
     return { result: RESULT.NOT_COVERED, reasonCode: 'trading_enterprise', workings, needsReview: false };
   }
 
-  // A manufacturer can still act as a pass-through on a given supply.
+  // A manufacturer can still act as a pass-through on a given supply -- but
+  // that has to be evidenced on THIS supply. `supplyEvidenced` is false when
+  // the caller had no invoice-level finding and fell back to a vendor-level
+  // inference about what the firm generally does.
+  //
+  // The distinction is load-bearing. Excluding a covered vendor is the
+  // expensive error: it silently drops a real deduction, and nothing later in
+  // the pipeline looks at it again. So a vendor-level guess that conflicts
+  // with the registration escalates; it does not exclude.
   if (supply === SUPPLY.RESALE) {
+    if (e.supplyEvidenced === false) {
+      workings.push('Registered as a producer, but the supply history reads as resale rather than production.');
+      workings.push('That conflict is drawn from what the vendor generally does, not from this supply, ' +
+        'and excluding a covered vendor loses a real deduction — escalating instead of deciding.');
+      return { result: RESULT.UNKNOWN, reasonCode: 'activity_conflict', workings, needsReview: true };
+    }
     workings.push('Registered as a producer, but this supply was third-party material passed through ' +
       'without further processing, so it is not a covered supply on its own facts.');
     return { result: RESULT.NOT_COVERED, reasonCode: 'pass_through_supply', workings, needsReview: false };
