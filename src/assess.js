@@ -45,9 +45,24 @@ export async function sweepVendor(vendor, opts = {}) {
   return finding;
 }
 
+/**
+ * Sweep the vendor master.
+ *
+ * `refresh: false` re-attempts anything that has NOT been resolved by the AI
+ * arm -- vendors with no finding at all, and vendors whose finding came from
+ * the heuristic fallback because the provider was rate-limited. Free tiers
+ * meter per minute, so a full AI sweep often cannot complete in one pass;
+ * running it a few times accumulates real coverage instead of freezing the
+ * first pass's failures in place.
+ */
 export async function sweepPortfolio({ refresh = false, forceHeuristic = false, onProgress } = {}) {
   const vendors = store.getVendors();
-  const todo = refresh ? vendors : vendors.filter((v) => !store.getVendorFinding(v.id));
+  const unresolved = (v) => {
+    const f = store.getVendorFinding(v.id);
+    if (!f) return true;
+    return !forceHeuristic && f.mode === 'heuristic_fallback';
+  };
+  const todo = refresh ? vendors : vendors.filter(unresolved);
   let done = 0;
   await pool(todo, async (v) => {
     await sweepVendor(v, { forceHeuristic });

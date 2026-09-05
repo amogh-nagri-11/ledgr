@@ -29,7 +29,10 @@ export const PROVIDERS = {
     label: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     keyEnv: 'GROQ_API_KEY',
-    defaultModel: 'llama-3.3-70b-versatile',
+    // The Llama line has been retired from Groq. Verified live: this model
+    // does tool calling in well under a second, which is what makes a full
+    // 24-vendor ablation run practical rather than a multi-day exercise.
+    defaultModel: 'openai/gpt-oss-120b',
     note: 'Free tier, very fast — console.groq.com/keys',
   },
   openrouter: {
@@ -162,6 +165,29 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
       const msg = errorBody?.message || json?.message || `HTTP ${res.status}`;
       lastError = new Error(`${provider.label}: ${msg}`);
 
+      // A retired or misspelled model id is the single most misleading failure
+      // in this system: every vendor silently falls back to the heuristic arm,
+      // the UI honestly reports "heuristic", and you conclude the AI did not
+      // help -- when it never ran. Providers retire models regularly (Gemini
+      // 2.5 and Groq's Llama line both went during this project), so say so
+      // loudly and name what the key can actually see.
+      if (res.status === 404 || /model .*(not found|no longer available|does not exist|decommissioned)/i.test(msg)) {
+        const available = await listModels(provider).catch(() => []);
+        modelUnavailable = {
+          model: provider.model,
+          provider: provider.label,
+          message: msg,
+          available: available.slice(0, 40),
+        };
+        console.error(`\n[llm] MODEL "${provider.model}" IS NOT AVAILABLE on ${provider.label}.`);
+        console.error(`[llm] ${msg}`);
+        if (available.length) {
+          console.error(`[llm] Set LLM_MODEL in .env to one of: ${available.slice(0, 12).join(', ')}${available.length > 12 ? ' …' : ''}`);
+        }
+        console.error('[llm] Until then every finding will come from the heuristic arm, which is NOT an AI result.\n');
+        throw new Error(`${provider.label}: model "${provider.model}" is not available. ${msg}`);
+      }
+
       // A quota ceiling is not a transient blip. Trip the breaker so the rest
       // of the batch stops immediately instead of retrying it 24 more times.
       if (res.status === 429 && /quota|exceeded your current/i.test(msg)) {
@@ -192,15 +218,41 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 const QUOTA_COOLDOWN_MS = 10 * 60 * 1000;
 let quotaExhaustedUntil = 0;
 
-/** Is the AI arm currently usable, or has the quota breaker tripped? */
+/** Set when the configured model id is rejected by the provider. */
+let modelUnavailable = null;
+
+/** What the provider says this key can actually use. */
+export async function listModels(provider = activeProvider()) {
+  if (!provider) return [];
+  const res = await fetch(`${provider.baseUrl}/models`, {
+    headers: { Authorization: `Bearer ${provider.apiKey}` },
+  });
+  if (!res.ok) return [];
+  const json = await res.json().catch(() => ({}));
+  return (json.data || [])
+    .map((m) => String(m.id).replace(/^models\//, ''))
+    .filter((id) => !/whisper|tts|guard|embedding|orpheus|imagen|veo|lyria/i.test(id))
+    .sort();
+}
+
+/**
+ * Is the AI arm usable? Reports both failure modes the UI must not confuse
+ * with "the model tried and did no better": an exhausted quota, and a model id
+ * the provider will not serve.
+ */
 export function quotaState() {
   const tripped = Date.now() < quotaExhaustedUntil;
-  return { tripped, until: tripped ? new Date(quotaExhaustedUntil).toISOString() : null };
+  return {
+    tripped,
+    until: tripped ? new Date(quotaExhaustedUntil).toISOString() : null,
+    modelUnavailable,
+  };
 }
 
 /** Clear the breaker — used when the user switches model or provider. */
 export function resetQuotaBreaker() {
   quotaExhaustedUntil = 0;
+  modelUnavailable = null;
 }
 
 const backoffMs = (attempt) => Math.round((2 ** attempt) * 1000 * (0.75 + Math.random() * 0.5));
@@ -215,6 +267,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function retryDelayMs(res, errorBody, attempt) {
   const header = Number(res.headers.get('retry-after'));
   if (Number.isFinite(header) && header > 0) return header * 1000;
+
+  // Groq states the wait in prose: "Please try again in 7.62s". Honouring it
+  // turns a 20-second blind backoff into an 8-second accurate one, which is
+  // the difference between a sweep that completes and one that grinds.
+  const spoken = String(errorBody?.message || '').match(/try again in ([\d.]+)\s*s/i);
+  if (spoken) {
+    const secs = Number(spoken[1]);
+    if (Number.isFinite(secs) && secs > 0) return Math.ceil(secs * 1000) + 750;
+  }
 
   const info = (errorBody?.details || []).find((d) => String(d['@type'] || '').includes('RetryInfo'));
   const seconds = Number(String(info?.retryDelay || '').replace('s', ''));

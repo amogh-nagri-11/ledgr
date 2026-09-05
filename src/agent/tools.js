@@ -47,7 +47,11 @@ export function searchUdyamRegistry({ query, as_of }) {
       similarity: looseScore(query, r.name),
     }))
     .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, 5);
+    .slice(0, 4)
+    // classHistory is only needed once an entity is chosen; carrying it for
+    // every candidate is most of this payload, and free tiers meter tokens
+    // per minute. get_udyam_registration returns the full record.
+    .map(({ classHistory, registeredOn, ...rest }) => rest);
 
   return {
     query,

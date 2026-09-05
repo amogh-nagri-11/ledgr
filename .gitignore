@@ -3,3 +3,7 @@ node_modules/
 .env.local
 .ledgr-state.json
 *.log
+
+# Local state snapshots (derived, and only valid for the day they were taken
+# because live invoice dates are relative to today)
+demo-state.backup.json
