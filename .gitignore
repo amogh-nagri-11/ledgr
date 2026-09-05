@@ -7,3 +7,7 @@ node_modules/
 # Local state snapshots (derived, and only valid for the day they were taken
 # because live invoice dates are relative to today)
 demo-state.backup.json
+
+# Kept locally, out of the repo (working notes / spec)
+LEDGR.md
+PROVENANCE.md

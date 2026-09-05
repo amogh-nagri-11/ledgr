@@ -96,7 +96,7 @@ A provider error or timeout falls back the same way and records the reason on th
 
 ## The corpus
 
-`src/corpus/` — 24 vendors, a 26-entry Udyam registry with NIC activity codes, 19 contract documents, 55 raw acceptance documents, 25 live payables and 185 historical invoices, all with ground-truth labels. Synthetic and deterministic from a fixed seed. See [`PROVENANCE.md`](./PROVENANCE.md) for why, and for what production would use instead.
+`src/corpus/` — 24 vendors, a 26-entry Udyam registry with NIC activity codes, 19 contract documents, 55 raw acceptance documents, 25 live payables and 185 historical invoices, all with ground-truth labels. Synthetic and deterministic from a fixed seed — an accuracy claim needs known-correct answers, and real vendor ledgers do not come labelled.
 
 Acceptance evidence is deliberately **untyped** — documents carry a medium (email, scan, system note) and a body, nothing more. An earlier corpus tagged events `objection_raised`, which handed the model its answer and let a regex reproduce the agent's output exactly. A test now asserts no document carries a `type` field.
 
@@ -116,4 +116,4 @@ npm test
 
 ## Not legal or tax advice
 
-Every flag is an informational risk indicator to verify with a CA. The trading-enterprise exclusion in particular is a live practitioner nuance and is flagged unconfirmed in `PROVENANCE.md`; it drives the largest single number in the ablation.
+Every flag is an informational risk indicator to verify with a CA. The trading-enterprise exclusion in particular is a live practitioner nuance and is flagged unconfirmed; it drives the largest single number in the ablation.
