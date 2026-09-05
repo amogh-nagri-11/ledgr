@@ -28,6 +28,7 @@ async function api(path, options) {
 
 function renderChrome() {
   if (!state) return;
+  if (!state.mode) return;   // a job receipt is not a state envelope
   const quotaTripped = state.mode.quota && state.mode.quota.tripped;
   $('modeAi').textContent = quotaTripped
     ? `AI: quota exhausted — heuristic arm`
@@ -539,18 +540,56 @@ $('btnSweepFast').addEventListener('click', () => {
   runSweep(true);
 });
 
-$('btnAnalyze').addEventListener('click', async () => {
+/**
+ * Like the sweep, the ledger analysis runs server-side and the POST returns 202
+ * immediately -- that body is a job receipt, not a state envelope. Rendering it
+ * directly is what produced "cannot read properties of undefined (reading
+ * 'quota')": the receipt has no `mode`. Poll for the state instead.
+ */
+async function runAnalysis() {
   const btn = $('btnAnalyze');
   btn.disabled = true;
-  hint(state?.mode.ai ? 'Invoice agent is reading contracts and acceptance documents…' : 'Running heuristic extraction over the live ledger…', true);
+  hint(state?.mode?.ai ? 'Invoice agent is reading contracts and acceptance documents…' : 'Running heuristic extraction over the live ledger…', true);
   try {
     recommendations.clear();
-    render(await api('/api/analyze', { method: 'POST', body: JSON.stringify({ refresh: true }) }));
+    try {
+      await api('/api/analyze', { method: 'POST', body: JSON.stringify({ refresh: true }) });
+    } catch (err) {
+      // A pass already in flight is not a failure -- join its progress rather
+      // than reporting an error over a run that is doing exactly what we want.
+      if (!/already running/i.test(err.message)) throw err;
+    }
     show('queue');
-    hint(`Analysed ${state.summary.count} live payables · ${state.summary.byLevel.red} red · ${state.summary.byLevel.grey} held for review. Click a row for the evidence chain.`);
-  } catch (err) { hint(`Analysis failed: ${err.message}`); }
+
+    let last = -1;
+    for (;;) {
+      const out = await api('/api/analyze/status');
+      if (out.analysis.done !== last) {
+        last = out.analysis.done;
+        render(out);
+      } else if (state) {
+        state.analysis = out.analysis;
+        renderChrome();
+      }
+
+      if (!out.analysis.running) {
+        if (out.analysis.error) { hint(`Analysis failed: ${out.analysis.error}`); break; }
+        render(out);
+        hint(`Analysed ${state.summary.count} live payables · ${state.summary.byLevel.red} red · ${state.summary.byLevel.grey} held for review. Click a row for the evidence chain.`);
+        break;
+      }
+
+      hint(`${out.mode.ai ? 'Invoice agent' : 'Heuristic extraction'} working — ${out.analysis.done}/${out.analysis.total} payables`
+        + (out.analysis.current ? ` (on ${out.analysis.current})` : '') + '. Results appear as they land.', true);
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  } catch (err) {
+    hint(`Analysis failed: ${err.message}`);
+  }
   btn.disabled = false;
-});
+}
+
+$('btnAnalyze').addEventListener('click', runAnalysis);
 
 $('btnAuto').addEventListener('click', async () => {
   const btn = $('btnAuto');
