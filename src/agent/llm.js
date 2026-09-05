@@ -200,10 +200,35 @@ export async function chat({ messages, tools, maxTokens = 2000, temperature = 0 
 
       // A quota ceiling is not a transient blip. Trip the breaker so the rest
       // of the batch stops immediately instead of retrying it 24 more times.
-      if (res.status === 429 && /quota|exceeded your current/i.test(msg)) {
-        quotaExhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS;
-        console.warn(`[llm] ${provider.label} quota exhausted — falling back to the heuristic arm for the next ${QUOTA_COOLDOWN_MS / 60000} minutes.`);
-        throw lastError;
+      //
+      // Three signals mean the window will not reopen soon, and all three are
+      // treated the same way:
+      //   - an explicit quota message
+      //   - a per-DAY limit (TPD/RPD), which no amount of waiting clears
+      //   - a stated retry delay longer than we are willing to sleep
+      //
+      // That last one matters most. Honouring a provider's stated delay without
+      // a ceiling means a single call can silently block a whole run for
+      // minutes with no log line and no progress -- which looks exactly like a
+      // hang, and was misdiagnosed as one twice.
+      if (res.status === 429) {
+        const stated = parseSpokenDelay(msg);
+        const perDay = /per day|TPD|RPD|requests per day|tokens per day/i.test(msg);
+        const explicitQuota = /quota|exceeded your current/i.test(msg);
+        const tooLongToWait = stated != null && stated > MAX_SLEEP_MS;
+
+        if (explicitQuota || perDay || tooLongToWait) {
+          const cooldown = perDay || explicitQuota
+            ? QUOTA_COOLDOWN_MS
+            : Math.min(stated, QUOTA_COOLDOWN_MS);
+          quotaExhaustedUntil = Date.now() + cooldown;
+          const why = perDay ? 'daily limit reached'
+            : explicitQuota ? 'quota exhausted'
+              : `provider asked for ${Math.round(stated / 1000)}s, longer than we will sleep`;
+          console.warn(`[llm] ${provider.label}: ${why} — heuristic arm for the next ${Math.round(cooldown / 60000)} min.`);
+          console.warn(`[llm] ${msg.slice(0, 160)}`);
+          throw lastError;
+        }
       }
 
       if (RETRYABLE.has(res.status) && attempt < MAX_RETRIES) {
@@ -238,6 +263,9 @@ const MAX_RETRIES = 3;
 
 /** No provider should hold a connection open longer than this. */
 const REQUEST_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS) || 90000;
+
+/** Longest we will sit in a retry sleep. Beyond this, fail over to the heuristic. */
+const MAX_SLEEP_MS = Number(process.env.LLM_MAX_SLEEP_MS) || 60000;
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 
 /** Circuit breaker for quota ceilings, which retrying cannot fix. */
@@ -308,21 +336,30 @@ function retryDelayMs(res, errorBody, attempt) {
   const header = Number(res.headers.get('retry-after'));
   if (Number.isFinite(header) && header > 0) return header * 1000;
 
-  // Groq states the wait in prose: "Please try again in 7.62s". Honouring it
-  // turns a 20-second blind backoff into an 8-second accurate one, which is
-  // the difference between a sweep that completes and one that grinds.
-  const spoken = String(errorBody?.message || '').match(/try again in ([\d.]+)\s*s/i);
-  if (spoken) {
-    const secs = Number(spoken[1]);
-    if (Number.isFinite(secs) && secs > 0) return Math.ceil(secs * 1000) + 750;
-  }
+  const spoken = parseSpokenDelay(errorBody?.message);
+  if (spoken != null) return spoken + 750;
 
   const info = (errorBody?.details || []).find((d) => String(d['@type'] || '').includes('RetryInfo'));
   const seconds = Number(String(info?.retryDelay || '').replace('s', ''));
   if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds * 1000) + 500;
 
-  // Rate limiting is a per-minute window; transient 5xx is not.
   return res.status === 429 ? 20000 * (attempt + 1) : backoffMs(attempt);
+}
+
+/**
+ * Providers state the wait in prose, and not always in plain seconds: Groq
+ * writes "try again in 7.62s" but also "try again in 7m35.76s".
+ *
+ * Matching only the trailing seconds turned 455s into 35s, which meant the
+ * retry fired far too early and burned another attempt against a window that
+ * had not reopened. Returns milliseconds, or null if nothing parses.
+ */
+export function parseSpokenDelay(message) {
+  const m = String(message || '').match(/try again in\s+(?:(\d+)h)?(?:(\d+)m)?([\d.]+)?s?/i);
+  if (!m) return null;
+  const [, h, min, sec] = m;
+  const total = (Number(h || 0) * 3600) + (Number(min || 0) * 60) + Number(sec || 0);
+  return Number.isFinite(total) && total > 0 ? Math.ceil(total * 1000) : null;
 }
 
 /** Tool-call arguments arrive as a JSON string, and weak models mangle them. */
